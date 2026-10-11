@@ -53,8 +53,13 @@ git push -u origin main
 | Slide under a pink gate | Down arrow or S | Swipe down or tap down |
 | Pause / resume | P or Escape | Pause button |
 | Start / restart | Space or the green button | Green button |
+| Enter / exit fullscreen | F or the corners button | Corners button |
 
 Trains must be dodged by switching lanes. Jumping will not clear a train. The game pauses automatically when you leave the tab or window.
+
+Tap the corners button at the top right of the game to fill the screen. Fullscreen adapts to a phone’s portrait display or a desktop’s landscape display, with the score, pause, exit, and touch controls kept visible. On supported devices it requests a portrait orientation lock for phones and landscape for desktops. Browsers that cannot lock orientation still adapt to the device’s current orientation.
+
+Native fullscreen hides browser controls where supported. On iPhone Safari and other browsers without element fullscreen, the game fills the browser viewport instead; browser chrome may remain visible. Tap the corners button again or press F to return to the page. Escape exits fullscreen, and pauses the game when outside fullscreen.
 
 ## Features
 
@@ -65,6 +70,7 @@ Trains must be dodged by switching lanes. Jumping will not clear a train. The ga
 - Best score, runner color, and sound preference saved in this browser’s local storage.
 - Three runner colors and optional synthesized sound effects. Sound starts muted.
 - Responsive layout, touch gestures, mobile buttons, keyboard controls, and instructions.
+- Fullscreen play with phone/desktop orientation support and an expanded-view fallback.
 - Original procedural artwork. No third-party assets, fonts, APIs, or tracking.
 
 Saved scores are specific to the browser and origin. If browser storage is blocked, the game still works but preferences and scores cannot persist. This is a single-player game with local scores; it does not include an online leaderboard.
@@ -77,6 +83,7 @@ Saved scores are specific to the browser and origin. If browser storage is block
 | `styles.css` | Responsive layout and visual design |
 | `engine.js` | Game simulation, obstacle generation, and collision detection |
 | `game.js` | Canvas rendering, input, audio, and browser storage |
+| `fullscreen.js` | Fullscreen, orientation requests, and viewport fallback |
 | `favicon.svg` | Original lightning icon |
 | `tests/engine.test.cjs` | Simulation regression tests |
 

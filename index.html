@@ -7,9 +7,10 @@
   <meta name="description" content="Hit the neon streets. A free browser endless runner with trains, coins, and one more run.">
   <title>Neon Dash — Keep moving.</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=fullscreen-1">
   <script src="./engine.js" defer></script>
-  <script src="./game.js" defer></script>
+  <script src="./fullscreen.js" defer></script>
+  <script src="./game.js?v=fullscreen-1" defer></script>
 </head>
 <body>
   <div class="app">
@@ -24,7 +25,7 @@
       <div class="game-layout">
         <section class="game-frame" aria-label="Neon Dash game">
           <canvas id="game" tabindex="0" aria-label="Endless runner. Use left and right arrows to switch lanes, up to jump, down to slide. Press P to pause."></canvas>
-          <div class="game-top"><span class="district"><span></span> MIDNIGHT DISTRICT <small>01</small></span><button class="icon-button pause-button" id="pause-button" aria-label="Pause game" disabled>Ⅱ</button></div>
+          <div class="game-top"><span class="district"><span></span> MIDNIGHT DISTRICT <small>01</small></span><div class="game-tools"><button class="icon-button fullscreen-button" id="fullscreen-button" aria-label="Enter fullscreen" aria-pressed="false" title="Fullscreen (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="expand-icon" d="M9 4H4v5m11-5h5v5M4 15v5h5m6 0h5v-5"/><path class="collapse-icon" d="M4 9h5V4m6 0v5h5M9 20v-5H4m16 0h-5v5"/></svg></button><button class="icon-button pause-button" id="pause-button" aria-label="Pause game" disabled>Ⅱ</button></div></div>
           <div class="hud" id="hud" hidden><div><span>DISTANCE</span><strong id="distance">0<span> m</span></strong></div><div class="coin-stat"><span>COINS</span><strong><i>◆</i> <b id="coins">0</b></strong></div></div>
           <div class="overlay" id="overlay">
             <div class="title-badge">NO FINISH LINE. JUST YOU.</div>
@@ -51,12 +52,12 @@
         </aside>
       </div>
 
-      <div class="control-strip"><div><span class="control-label">MAKE YOUR MOVE</span><span class="control-group"><kbd>←</kbd><kbd>→</kbd> Switch lanes</span><span class="control-group"><kbd>↑</kbd><kbd>SPACE</kbd> Jump</span><span class="control-group"><kbd>↓</kbd> Slide</span><span class="control-group"><kbd>P</kbd> Pause</span></div><span class="swipe-hint">↔ Swipe to play on mobile</span></div>
+      <div class="control-strip"><div><span class="control-label">MAKE YOUR MOVE</span><span class="control-group"><kbd>←</kbd><kbd>→</kbd> Switch lanes</span><span class="control-group"><kbd>↑</kbd><kbd>SPACE</kbd> Jump</span><span class="control-group"><kbd>↓</kbd> Slide</span><span class="control-group"><kbd>P</kbd> Pause</span></div><span class="swipe-hint"><kbd>F</kbd> Fullscreen · Swipe on mobile</span></div>
     </main>
     <footer><span>BUILT FOR THE <b>ONE-MORE-TRY</b> CROWD.</span><span>STAY QUICK. STAY CURIOUS. <i>↗</i></span></footer>
   </div>
 
-  <dialog id="help-dialog"><button class="dialog-close" aria-label="Close instructions">×</button><p class="eyebrow">WELCOME TO THE NIGHT SHIFT</p><h2>The streets are yours.</h2><p>Run as far as you can. Collect gold coins and keep clear of the midnight traffic.</p><div class="help-row"><kbd>← →</kbd><span><strong>Switch lanes</strong>Move around trains and obstacles.</span></div><div class="help-row"><kbd>↑ / SPACE</kbd><span><strong>Jump</strong>Clear the low striped barriers.</span></div><div class="help-row"><kbd>↓</kbd><span><strong>Slide</strong>Duck under glowing overhead gates.</span></div><div class="help-row"><kbd>P / ESC</kbd><span><strong>Pause</strong>Take a breath. The city can wait.</span></div><p class="dialog-note">On a phone, swipe in any direction or use the arrow buttons. Your best score saves on this device. Score = distance + 20 per coin.</p><button class="play-button dialog-done">GOT IT <span>↗</span></button></dialog>
+  <dialog id="help-dialog"><button class="dialog-close" aria-label="Close instructions">×</button><p class="eyebrow">WELCOME TO THE NIGHT SHIFT</p><h2>The streets are yours.</h2><p>Run as far as you can. Collect gold coins and keep clear of the midnight traffic.</p><div class="help-row"><kbd>← →</kbd><span><strong>Switch lanes</strong>Move around trains and obstacles.</span></div><div class="help-row"><kbd>↑ / SPACE</kbd><span><strong>Jump</strong>Clear the low striped barriers.</span></div><div class="help-row"><kbd>↓</kbd><span><strong>Slide</strong>Duck under glowing overhead gates.</span></div><div class="help-row"><kbd>P / ESC</kbd><span><strong>Pause</strong>Take a breath. The city can wait.</span></div><div class="help-row"><kbd>F</kbd><span><strong>Fullscreen</strong>Fill the screen. Tap the corners icon or press F to return.</span></div><p class="dialog-note">On a phone, swipe in any direction or use the arrow buttons. Your best score saves on this device. Score = distance + 20 per coin.</p><button class="play-button dialog-done">GOT IT <span>↗</span></button></dialog>
   <dialog id="style-dialog"><button class="dialog-close" aria-label="Close runner colors">×</button><p class="eyebrow">A LITTLE SELF EXPRESSION</p><h2>Find your glow.</h2><p>Same moves. Your colors.</p><div class="color-options"><button data-color="mint" class="color-option selected" aria-pressed="true"><span style="--swatch:#72f3cb"></span>Night Shift</button><button data-color="pink" class="color-option" aria-pressed="false"><span style="--swatch:#ff7baf"></span>Pink Noise</button><button data-color="blue" class="color-option" aria-pressed="false"><span style="--swatch:#88acff"></span>Blue Hour</button></div></dialog>
 </body>
 </html>

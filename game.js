@@ -260,7 +260,8 @@
     }
   }
   function runner() {
-    const p = project(game.visualLane - 1, 8.5), scale = Math.min(width / 900, height / 530) * 0.95;
+    const portraitFullscreen = document.body.classList.contains('game-view-expanded') && width < height;
+    const p = project(game.visualLane - 1, 8.5), scale = Math.min(width / (portraitFullscreen ? 420 : 900), height / 530) * 0.95;
     const jumping = game.jumpHeight * height * 0.083, sliding = game.slideTime > 0;
     const active = game.state === 'running', cycle = active ? game.distance * 0.65 : ambient * 4;
     const stride = active && !game.jumpTime && !sliding ? Math.sin(cycle) : 0.1;
