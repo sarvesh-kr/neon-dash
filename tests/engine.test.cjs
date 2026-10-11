@@ -5,7 +5,7 @@ const { RunnerEngine, MODES } = require('../engine.js');
 function running() {
   const game = new RunnerEngine(() => 0.1);
   game.start();
-  game.objects = [];
+  game.clearObjects();
   return game;
 }
 function obstacle(game, type, lane = 1) {
@@ -98,7 +98,7 @@ test('each difficulty increases speed up to its own cap', () => {
     const game = running();
     game.start(mode);
     game.time = 10000;
-    game.objects = [];
+    game.clearObjects();
     game.update(0.05);
     assert.equal(game.speed, config.max);
     assert.ok(game.speed > config.start);
@@ -113,7 +113,7 @@ test('obstacle generation always leaves a lane clear and places coins there', ()
   const game = new RunnerEngine(random);
   game.distance = 2000;
   for (let i = 0; i < 100; i++) {
-    game.objects = [];
+    game.clearObjects();
     game.spawnRow();
     const obstacles = game.objects.filter((o) =>
       ['train', 'barrier', 'gate', 'crate'].includes(o.type),
@@ -313,4 +313,49 @@ test('long runs remain bounded and keep the difficulty speed limit', () => {
     assert.ok(maxObjects < 100, `${mode} retained ${maxObjects} objects`);
     assert.ok(game.objects.every((o) => Number.isFinite(o.z)));
   }
+});
+
+test('restarts reuse the same object, event, and effect buffers with fresh flags', () => {
+  const game = new RunnerEngine(() => 0.1);
+  const slots = game.objectSlots,
+    objects = game.objects,
+    events = game.events,
+    effects = game.effects;
+  for (let i = 0; i < 1000; i++) {
+    game.start();
+    assert.equal(game.objectSlots, slots);
+    assert.equal(game.objects, objects);
+    assert.equal(game.events, events);
+    assert.equal(game.effects, effects);
+    assert.ok(game.objects.every((o) => !o.collected && !o.checked && !o.cleared && !o.destroyed));
+    assert.equal(game.objects.length + game.freeObjects.length, 128);
+    assert.equal(new Set([...game.objects, ...game.freeObjects]).size, 128);
+    for (const o of game.objects) {
+      o.collected = true;
+      o.checked = true;
+      o.cleared = true;
+      o.destroyed = true;
+    }
+  }
+});
+test('passed objects are returned to the pool and reused without retaining stale flags', () => {
+  const game = running();
+  game.addObject('coin', 1, 9);
+  const coin = game.objects[0];
+  game.update(0.01);
+  assert.equal(game.objects.length, 0);
+  assert.equal(game.freeObjects.length, 128);
+  game.addObject('gate', 2, 200);
+  assert.equal(game.objects[0], coin);
+  assert.equal(coin.type, 'gate');
+  assert.equal(coin.collected, false);
+  assert.equal(coin.checked, false);
+});
+test('the pool never expands if extra objects are requested beyond its budget', () => {
+  const game = running();
+  for (let i = 0; i < 10000; i++) game.addObject('coin', 0, 200);
+  assert.equal(game.objects.length, 128);
+  assert.equal(game.freeObjects.length, 0);
+  game.clearObjects();
+  assert.equal(game.freeObjects.length, 128);
 });

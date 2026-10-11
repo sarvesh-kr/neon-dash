@@ -1,7 +1,8 @@
 /* Pre-render collectible artwork so glowing coins do not blur or draw text per frame. */
 (() => {
   'use strict';
-  const sprites = {};
+  const atlas = document.createElement('canvas');
+  const spriteCount = 10;
   function sprite(type, spin = 1) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 128;
@@ -82,15 +83,39 @@
     ctx.restore();
     return canvas;
   }
-  sprites.coin = Array.from({ length: 8 }, (_, i) =>
-    sprite('coin', 0.3 + Math.abs(Math.cos((i / 8) * Math.PI)) * 0.7),
-  );
-  sprites.shield = sprite('shield');
-  sprites.magnet = sprite('magnet');
+  function ensure() {
+    if (atlas.width === 640 && atlas.height === 256) return;
+    atlas.width = 640;
+    atlas.height = 256;
+    const ctx = atlas.getContext('2d');
+    for (let i = 0; i < spriteCount; i++) {
+      const image =
+        i < 8
+          ? sprite('coin', 0.3 + Math.abs(Math.cos((i / 8) * Math.PI)) * 0.7)
+          : sprite(i === 8 ? 'shield' : 'magnet');
+      ctx.drawImage(image, (i % 5) * 128, Math.floor(i / 5) * 128);
+      image.width = image.height = 0;
+    }
+  }
   window.NeonItems = {
+    ensure,
+    release() {
+      atlas.width = atlas.height = 0;
+    },
     draw(ctx, type, x, y, radius, phase = 0) {
-      const image = type === 'coin' ? sprites.coin[Math.floor(phase) % 8] : sprites[type];
-      ctx.drawImage(image, x - radius * 2, y - radius * 2, radius * 4, radius * 4);
+      ensure();
+      const index = type === 'coin' ? Math.floor(phase) % 8 : type === 'shield' ? 8 : 9;
+      ctx.drawImage(
+        atlas,
+        (index % 5) * 128,
+        Math.floor(index / 5) * 128,
+        128,
+        128,
+        x - radius * 2,
+        y - radius * 2,
+        radius * 4,
+        radius * 4,
+      );
     },
   };
 })();

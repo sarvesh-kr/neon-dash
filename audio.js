@@ -8,7 +8,8 @@
     step = 0;
   let enabled = true,
     playing = false;
-  const musicSources = new Set();
+  const voices = new Set();
+  const voiceLimit = 32;
   const melody = [76, 0, 79, 83, 0, 79, 74, 0, 76, 0, 79, 86, 83, 0, 79, 74];
   const bass = [40, 40, 43, 43, 36, 36, 38, 38];
   const effects = {
@@ -21,7 +22,30 @@
   };
   const frequency = (note) => 440 * 2 ** ((note - 69) / 12);
 
+  function dispose(voice, stop = true) {
+    voice.oscillator.onended = null;
+    if (stop) {
+      try {
+        voice.oscillator.stop();
+      } catch (_) {}
+    }
+    voice.oscillator.disconnect();
+    voice.gain.disconnect();
+    voices.delete(voice);
+  }
+
   function tone(from, to, at, duration, volume, type = 'sine', music = false) {
+    if (voices.size >= voiceLimit) {
+      if (!music) return;
+      // Music takes priority over a burst of pickup/restart effects.
+      let oldest = voices.values().next().value;
+      for (const voice of voices)
+        if (!voice.music) {
+          oldest = voice;
+          break;
+        }
+      dispose(oldest);
+    }
     const oscillator = context.createOscillator(),
       gain = context.createGain();
     oscillator.type = type;
@@ -32,11 +56,10 @@
     gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
     oscillator.connect(gain);
     gain.connect(master);
-    if (music) musicSources.add(oscillator);
+    const voice = { oscillator, gain, music };
+    voices.add(voice);
     oscillator.onended = () => {
-      musicSources.delete(oscillator);
-      oscillator.disconnect();
-      gain.disconnect();
+      dispose(voice, false);
     };
     oscillator.start(at);
     oscillator.stop(at + duration + 0.025);
@@ -60,24 +83,35 @@
         tone(note, note, nextNote, 0.13, 0.065, 'triangle', true);
       }
       nextNote += 60 / 122 / 4;
-      step++;
+      step = (step + 1) % 32;
     }
   }
 
   function stopMusic() {
     clearInterval(timer);
     timer = null;
-    for (const source of musicSources) {
-      try {
-        source.stop();
-      } catch (_) {}
-    }
-    musicSources.clear();
+    for (const voice of voices) if (voice.music) dispose(voice);
+  }
+  function stopAll() {
+    stopMusic();
+    for (const voice of voices) dispose(voice);
+  }
+  function suspend() {
+    stopAll();
+    if (context?.state === 'running') context.suspend().catch(() => {});
   }
   function sync() {
     if (!context) return;
     master.gain.setTargetAtTime(enabled && !document.hidden ? 0.85 : 0, context.currentTime, 0.015);
-    if (!enabled || !playing || document.hidden || context.state !== 'running') {
+    if (!enabled || document.hidden) {
+      suspend();
+      return;
+    }
+    if (context.state !== 'running') {
+      stopAll();
+      return;
+    }
+    if (!playing) {
       stopMusic();
       return;
     }
@@ -131,6 +165,12 @@
       playing = value;
       sync();
     },
+    get activeVoices() {
+      return voices.size;
+    },
+    get capacity() {
+      return voiceLimit;
+    },
   };
   document.addEventListener('pointerdown', unlock, { capture: true, passive: true });
   document.addEventListener(
@@ -141,6 +181,6 @@
     true,
   );
   document.addEventListener('visibilitychange', sync);
-  window.addEventListener('pagehide', stopMusic);
+  window.addEventListener('pagehide', suspend);
   window.addEventListener('pageshow', sync);
 })();

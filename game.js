@@ -15,6 +15,7 @@
       glow: '#c681753c',
       rail: '#af66b58c',
       sign: '#ffaae4',
+      light: 1,
       floor: '#293046',
       fog: '#77517075',
     },
@@ -25,6 +26,7 @@
       rail: '#aa88ef99',
       sign: '#a7adff',
       floor: '#332d4a',
+      light: 2,
       fog: '#76569075',
     },
     {
@@ -34,6 +36,7 @@
       rail: '#68d0c899',
       sign: '#97ffe8',
       floor: '#243e48',
+      light: 3,
       fog: '#56868475',
     },
   ];
@@ -66,23 +69,10 @@
     blue: { color: '#88acff', name: 'Blue Hour' },
   };
   const format = (value) => Math.floor(value).toLocaleString();
-  try {
-    const value = Number(localStorage.getItem('neon-dash-best'));
-    best =
-      Number.isFinite(value) && value > 0 && value <= Number.MAX_SAFE_INTEGER
-        ? Math.floor(value)
-        : 0;
-    const savedColor = localStorage.getItem('neon-dash-color');
-    if (Object.hasOwn(palettes, savedColor)) runnerColor = savedColor;
-    soundEnabled = localStorage.getItem('neon-dash-sound') !== 'false';
-  } catch (_) {
-    /* Storage can be unavailable in private or embedded browsers. */
-  }
-  function save(key, value) {
-    try {
-      localStorage.setItem(key, String(value));
-    } catch (_) {}
-  }
+  const preferences = new NeonPreferences();
+  best = preferences.get('best');
+  runnerColor = preferences.get('color');
+  soundEnabled = preferences.get('sound');
   const sound = (type) => NeonAudio.effect(type);
   const isTouch = () => navigator.maxTouchPoints > 0;
   const nodes = Object.fromEntries(
@@ -115,7 +105,7 @@
       button.classList.toggle('selected', selected);
       button.setAttribute('aria-pressed', String(selected));
     });
-    save('neon-dash-color', color);
+    preferences.set('color', color);
     drawnState = undefined;
     scheduleFrame();
   }
@@ -154,6 +144,15 @@
       if (announce) showToast(`NOW ENTERING · ${currentDistrict.name}`);
     }
   }
+  const effectColors = {
+    coin: '#ffd67b',
+    land: '#b4ced9',
+    shield: '#a7f7cf',
+    'shield-break': '#a7f7cf',
+    magnet: '#88caff',
+    dodge: '#b7ffe1',
+    crash: '#ffb19b',
+  };
   function feedback(effect) {
     const point = project(
       (effect.lane ?? game.visualLane) - 1,
@@ -161,21 +160,12 @@
       effect.type === 'coin' ? 0.7 : 0,
     );
     const target = project(game.visualLane - 1, 8.5, 0.7);
-    const colors = {
-      coin: '#ffd67b',
-      land: '#b4ced9',
-      shield: '#a7f7cf',
-      'shield-break': '#a7f7cf',
-      magnet: '#88caff',
-      dodge: '#b7ffe1',
-      crash: '#ffb19b',
-    };
     if (!reducedMotion)
       NeonEffects.emit(
         effect.type,
         point.x,
         point.y,
-        colors[effect.type] || '#ffffff',
+        effectColors[effect.type] || '#ffffff',
         effect.type === 'coin' && game.magnetTime > 0 ? target : null,
       );
     if (effect.type === 'crash') {
@@ -270,7 +260,7 @@
     const record = game.score > best;
     if (record) {
       best = game.score;
-      save('neon-dash-best', best);
+      preferences.set('best', best);
       $('header-best').textContent = format(best);
     }
     $('overlay').className = 'overlay finished';
@@ -352,7 +342,7 @@
   $('pause-button').addEventListener('click', togglePause);
   $('sound-button').addEventListener('click', () => {
     soundEnabled = !soundEnabled;
-    save('neon-dash-sound', soundEnabled);
+    preferences.set('sound', soundEnabled);
     NeonAudio.setEnabled(soundEnabled);
     updateSoundButton();
     if (soundEnabled) NeonAudio.unlock();
@@ -484,35 +474,38 @@
   canvas.addEventListener('lostpointercapture', cancelSwipe);
 
   // Perspective projection and original procedural scenery.
+  const projectionPoints = Array.from({ length: 4096 }, () => ({ x: 0, y: 0, scale: 0 }));
+  let projectionCursor = 0;
   function project(x, z, elevation = 0) {
     const scale = 17 / (Math.max(-3, z) + 17);
-    return {
-      x: width / 2 + x * width * 0.27 * scale,
-      y: height * 0.345 + height * 0.66 * scale - elevation * height * 0.19 * scale,
-      scale,
-    };
+    const point = projectionPoints[projectionCursor];
+    projectionCursor = (projectionCursor + 1) % projectionPoints.length;
+    point.x = width / 2 + x * width * 0.27 * scale;
+    point.y = height * 0.345 + height * 0.66 * scale - elevation * height * 0.19 * scale;
+    point.scale = scale;
+    return point;
   }
-  function polygon(points, color, stroke) {
-    ctx.beginPath();
+  function polygon(points, color, stroke, context = ctx) {
+    context.beginPath();
     points.forEach((point, index) =>
-      index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y),
+      index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y),
     );
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.fill();
+    context.closePath();
+    context.fillStyle = color;
+    context.fill();
     if (stroke) {
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = 1;
-      ctx.stroke();
+      context.strokeStyle = stroke;
+      context.lineWidth = 1;
+      context.stroke();
     }
   }
-  function line(a, b, color, thickness = 1) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = thickness;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
+  function line(a, b, color, thickness = 1, context = ctx) {
+    context.strokeStyle = color;
+    context.lineWidth = thickness;
+    context.beginPath();
+    context.moveTo(a.x, a.y);
+    context.lineTo(b.x, b.y);
+    context.stroke();
   }
   let seed = 7345;
   function seeded() {
@@ -532,7 +525,7 @@
     alpha: seeded() * 0.5 + 0.1,
   }));
   const backdrop = document.createElement('canvas');
-  let floorGradient, fogGradient, vignetteGradient;
+  let fogGradient, vignetteGradient;
   function cacheScenery(dpr) {
     backdrop.width = canvas.width;
     backdrop.height = canvas.height;
@@ -585,7 +578,7 @@
         ctx.stroke();
       }
     }
-    floorGradient = ctx.createLinearGradient(0, height * 0.35, 0, height);
+    const floorGradient = ctx.createLinearGradient(0, height * 0.35, 0, height);
     floorGradient.addColorStop(0, currentDistrict.floor);
     floorGradient.addColorStop(1, '#141d2e');
     fogGradient = ctx.createLinearGradient(0, height * 0.32, 0, height * 0.6);
@@ -601,29 +594,42 @@
     );
     vignetteGradient.addColorStop(0, '#090d1700');
     vignetteGradient.addColorStop(1, '#090d1755');
-  }
-  function background() {
-    ctx.drawImage(backdrop, 0, 0, width, height);
+    // Bake the road and fixed rails into the backdrop instead of repainting them.
     polygon(
       [project(-1.67, 280), project(1.67, 280), project(1.67, -3), project(-1.67, -3)],
       floorGradient,
+      undefined,
+      ctx,
     );
     polygon(
       [project(-3.5, 280), project(-1.67, 280), project(-1.67, -3), project(-3.5, -3)],
       '#242033',
+      undefined,
+      ctx,
     );
     polygon(
       [project(1.67, 280), project(3.5, 280), project(3.5, -3), project(1.67, -3)],
       '#242033',
+      undefined,
+      ctx,
     );
-    line(project(-1.66, 280), project(-1.66, -3), currentDistrict.rail, 2);
-    line(project(1.66, 280), project(1.66, -3), currentDistrict.rail, 2);
+    line(project(-1.66, 280), project(-1.66, -3), currentDistrict.rail, 2, ctx);
+    line(project(1.66, 280), project(1.66, -3), currentDistrict.rail, 2, ctx);
     for (const lane of [-1, 0, 1]) {
       for (const rail of [-0.3, 0.3]) {
-        line(project(lane + rail, 280), project(lane + rail, -3), '#677b91', 1.5);
-        line(project(lane + rail + 0.022, 280), project(lane + rail + 0.022, -3), '#172133', 2);
+        line(project(lane + rail, 280), project(lane + rail, -3), '#677b91', 1.5, ctx);
+        line(
+          project(lane + rail + 0.022, 280),
+          project(lane + rail + 0.022, -3),
+          '#172133',
+          2,
+          ctx,
+        );
       }
     }
+  }
+  function background() {
+    ctx.drawImage(backdrop, 0, 0, width, height);
     const travel = game.state === 'ready' ? ambient * 7 : game.distance;
     for (let band = 0; band < 2; band++) {
       ctx.beginPath();
@@ -655,10 +661,30 @@
         line(bottom, top, '#6a526e', Math.max(1, bottom.scale * 4));
         const end = project(side * 1.56, z, 2.8);
         line(top, end, '#8b6894', Math.max(1, bottom.scale * 3));
-        ctx.shadowBlur = 15 * bottom.scale;
-        ctx.shadowColor = '#ff9ddd';
-        line(end, project(side * 1.4, z, 2.8), currentDistrict.sign, Math.max(1, bottom.scale * 5));
-        ctx.shadowBlur = 0;
+        const tip = project(side * 1.4, z, 2.8);
+        NeonGraphics.light(
+          ctx,
+          (end.x + tip.x) / 2,
+          end.y,
+          46 * bottom.scale,
+          32 * bottom.scale,
+          currentDistrict.light,
+        );
+        line(end, tip, currentDistrict.sign, Math.max(1, bottom.scale * 5));
+        // Soft reflections add street depth using the same fixed light atlas.
+        if (bottom.scale > 0.13) {
+          const reflection = project(side * 1.55, z);
+          ctx.globalAlpha = 0.24;
+          NeonGraphics.light(
+            ctx,
+            reflection.x,
+            reflection.y,
+            62 * bottom.scale,
+            16 * bottom.scale,
+            currentDistrict.light,
+          );
+          ctx.globalAlpha = 1;
+        }
       }
     }
     ctx.fillStyle = fogGradient;
@@ -698,15 +724,20 @@
         c = project(inner, z + 16, 2.2),
         d = project(inner, z + 5, 2.2);
       polygon([a, b, c, d], '#863b7960', '#e386c980');
-      ctx.shadowColor = '#ef92da';
-      ctx.shadowBlur = a.scale * 13;
+      NeonGraphics.light(
+        ctx,
+        (a.x + b.x) / 2,
+        (a.y + d.y) / 2,
+        Math.abs(a.x - b.x) + 18 * a.scale,
+        30 * a.scale,
+        currentDistrict.light,
+      );
       line(
         project(inner, z + 7, 1.7),
         project(inner, z + 14, 1.7),
         currentDistrict.sign,
         Math.max(1, a.scale * 3),
       );
-      ctx.shadowBlur = 0;
     }
   }
   function box(x, z, halfWidth, length, tall, colors, drawFront = true) {
@@ -779,11 +810,9 @@
       );
       for (const offset of [-0.26, 0.26]) {
         const light = project(x + offset, z - 0.1, 0.45);
-        ctx.shadowColor = '#ffe8b1';
-        ctx.shadowBlur = 18 * p.scale;
+        NeonGraphics.light(ctx, light.x, light.y, 48 * p.scale, 28 * p.scale, 0);
         ctx.fillStyle = '#fff1c3';
         ctx.fillRect(light.x - 6 * p.scale, light.y - 3 * p.scale, 12 * p.scale, 6 * p.scale);
-        ctx.shadowBlur = 0;
       }
       const visibleSide = x < 0 ? x + 0.435 : x - 0.435;
       for (let i = 3; i < 16; i += 4)
@@ -844,15 +873,14 @@
         '#ab638c',
         '#ffadd2',
       );
-      ctx.shadowBlur = 15 * p.scale;
-      ctx.shadowColor = '#ffa9dd';
+      const gateLight = project(x, z, 1.3);
+      NeonGraphics.light(ctx, gateLight.x, gateLight.y, width * 0.29 * p.scale, 36 * p.scale, 1);
       line(
         project(x - 0.46, z - 0.02, 1.3),
         project(x + 0.46, z - 0.02, 1.3),
         '#ffa9dd',
         Math.max(1, p.scale * 4),
       );
-      ctx.shadowBlur = 0;
       for (const offset of [-0.22, 0, 0.22]) {
         const at = project(x + offset, z - 0.03, 1.7);
         ctx.strokeStyle = '#ffe0ed';
@@ -901,6 +929,7 @@
     ...Array.from({ length: 9 }, (_, i) => ({ lane: 1, z: 23 + i * 8, type: 'coin' })),
   ].sort((a, b) => b.z - a.z);
   function render() {
+    projectionCursor = 0;
     ctx.save();
     if (!reducedMotion && impact > 0)
       ctx.translate(Math.sin(ambient * 95) * impact * 10, Math.cos(ambient * 70) * impact * 6);
@@ -925,6 +954,7 @@
     }
   }
   function resize() {
+    if (document.hidden) return;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     width = rect.width;
@@ -949,6 +979,24 @@
     cachedDpr = dpr;
     cacheScenery(dpr);
     render();
+  }
+  function releaseRendering() {
+    // Keep simulation and scores; release pixel buffers that cannot be displayed.
+    backdrop.width = backdrop.height = 0;
+    canvas.width = canvas.height = 1;
+    fogGradient = vignetteGradient = null;
+    NeonItems.release();
+    NeonGraphics.release();
+    NeonEffects.reset();
+    particleCount = 0;
+    impact = 0;
+    clearTimeout(toastTimer);
+    $('toast').classList.remove('show');
+  }
+  function restoreRendering() {
+    if (document.hidden) return;
+    resize();
+    scheduleFrame();
   }
   let hudElapsed = 0,
     accumulator = 0,
@@ -1031,9 +1079,10 @@
       cancelAnimationFrame(animationId);
       animationId = 0;
       lastTime = 0;
+      releaseRendering();
     } else {
       lastTime = 0;
-      scheduleFrame();
+      restoreRendering();
     }
   });
   window.addEventListener('pagehide', () => {
@@ -1041,8 +1090,9 @@
     cancelAnimationFrame(animationId);
     animationId = 0;
     lastTime = 0;
+    releaseRendering();
   });
-  window.addEventListener('pageshow', scheduleFrame);
+  window.addEventListener('pageshow', restoreRendering);
   $('header-best').textContent = format(best);
   setColor(runnerColor);
   updateSoundButton();

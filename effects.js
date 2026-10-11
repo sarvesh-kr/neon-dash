@@ -11,8 +11,9 @@
   function emit(type, x, y, color, target) {
     const count = type === 'coin' ? 5 : type === 'land' ? 6 : type === 'crash' ? 22 : 12;
     for (let i = 0; i < count; i++) {
-      const p = pool[cursor++ % pool.length],
+      const p = pool[cursor],
         angle = random() * Math.PI * 2;
+      cursor = (cursor + 1) % pool.length;
       const speed = (type === 'coin' ? 25 : 65) * (0.4 + random());
       Object.assign(p, {
         x,
@@ -23,7 +24,9 @@
         total: type === 'crash' ? 0.45 : 0.3,
         size: type === 'land' ? 3 : 2 + random() * 2,
         color,
-        target: target || null,
+        attracted: !!target,
+        targetX: target?.x ?? 0,
+        targetY: target?.y ?? 0,
         dust: type === 'land',
       });
     }
@@ -34,10 +37,10 @@
       if (p.life <= 0) continue;
       p.life -= dt;
       if (p.life <= 0) continue;
-      if (p.target) {
+      if (p.attracted) {
         const factor = 1 - Math.exp(-dt * 12);
-        p.x += (p.target.x - p.x) * factor;
-        p.y += (p.target.y - p.y) * factor;
+        p.x += (p.targetX - p.x) * factor;
+        p.y += (p.targetY - p.y) * factor;
       } else {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
@@ -61,7 +64,11 @@
     step,
     draw,
     reset() {
-      for (const p of pool) p.life = 0;
+      for (const p of pool) {
+        p.life = 0;
+        p.attracted = false;
+        p.targetX = p.targetY = 0;
+      }
     },
     get capacity() {
       return pool.length;

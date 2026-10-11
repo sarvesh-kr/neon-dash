@@ -7,9 +7,25 @@
     rush: { start: 39, max: 62, acceleration: 0.14, spacing: 37 },
   };
   const OBSTACLE_LENGTH = { train: 17, barrier: 1, gate: 1.2, crate: 2.1 };
+  const KINDS = ['train', 'barrier', 'gate', 'crate'];
   class RunnerEngine {
     constructor(random = Math.random) {
       this.random = random;
+      this.objects = [];
+      this.events = [];
+      this.effects = [];
+      this.objectSlots = Array.from({ length: 128 }, (_, index) => ({
+        poolIndex: index,
+        active: false,
+        type: 'coin',
+        lane: 0,
+        z: 0,
+        collected: false,
+        checked: false,
+        cleared: false,
+        destroyed: false,
+      }));
+      this.freeObjects = [];
       this.reset('classic');
     }
     reset(mode) {
@@ -35,20 +51,46 @@
       this.nextBoost = 180;
       this.boostCount = 0;
       this.dodges = 0;
-      this.effects = [];
+      this.effects.length = 0;
       this.crashReason = '';
-      this.objects = [];
+      this.clearObjects();
       this.spawnDistance = 0;
-      this.events = [];
+      this.events.length = 0;
+    }
+    clearObjects() {
+      this.objects.length = 0;
+      this.freeObjects.length = 0;
+      for (const object of this.objectSlots) {
+        object.active = false;
+        this.freeObjects.push(object);
+      }
+    }
+    addObject(type, lane, z) {
+      const object = this.freeObjects.pop();
+      if (!object) return; // Capacity is ample for every supported mode; never grow the pool.
+      object.active = true;
+      object.type = type;
+      object.lane = lane;
+      object.z = z;
+      object.collected = false;
+      object.checked = false;
+      object.cleared = false;
+      object.destroyed = false;
+      this.objects.push(object);
+    }
+    releaseObject(object) {
+      if (object.active && this.objectSlots[object.poolIndex] === object) {
+        object.active = false;
+        this.freeObjects.push(object);
+      }
     }
     start(mode = this.mode) {
       this.reset(mode);
       this.state = 'running';
       this.spawnRow(120);
       // A readable opening trail and early shield let players find their rhythm.
-      this.objects.push({ lane: 1, z: 70, type: 'shield', collected: false });
-      for (let i = 0; i < 6; i++)
-        this.objects.push({ lane: 1, z: 25 + i * 6, type: 'coin', collected: false });
+      this.addObject('shield', 1, 70);
+      for (let i = 0; i < 6; i++) this.addObject('coin', 1, 25 + i * 6);
       this.objects.sort((a, b) => b.z - a.z);
     }
     action(action) {
@@ -89,26 +131,14 @@
     spawnRow(z = 205) {
       const safe = Math.floor(this.random() * 3);
       const blocked = (safe + 1 + Math.floor(this.random() * 2)) % 3;
-      const kinds = ['train', 'barrier', 'gate', 'crate'];
-      const type = kinds[Math.floor(this.random() * kinds.length)];
-      this.objects.push({ lane: blocked, z, type, checked: false });
+      const type = KINDS[Math.floor(this.random() * KINDS.length)];
+      this.addObject(type, blocked, z);
       if (this.distance > 280 && this.random() < (this.mode === 'chill' ? 0.2 : 0.45)) {
-        this.objects.push({
-          lane: 3 - safe - blocked,
-          z,
-          type: kinds[Math.floor(this.random() * kinds.length)],
-          checked: false,
-        });
+        this.addObject(KINDS[Math.floor(this.random() * KINDS.length)], 3 - safe - blocked, z);
       }
-      for (let i = 0; i < 6; i++)
-        this.objects.push({ lane: safe, z: z + 4 + i * 4.6, type: 'coin', collected: false });
+      for (let i = 0; i < 6; i++) this.addObject('coin', safe, z + 4 + i * 4.6);
       if (this.distance >= this.nextBoost) {
-        this.objects.push({
-          lane: safe,
-          z: z - 12,
-          type: this.boostCount++ % 2 ? 'shield' : 'magnet',
-          collected: false,
-        });
+        this.addObject(this.boostCount++ % 2 ? 'shield' : 'magnet', safe, z - 12);
         this.nextBoost = this.distance + 240;
       }
       // Every object travels equally, so depth order only changes on spawn.
@@ -204,6 +234,7 @@
           (object.type === 'train' ? object.z > -18 : object.z > -5)
         )
           this.objects[retained++] = object;
+        else this.releaseObject(object);
       }
       this.objects.length = retained;
     }

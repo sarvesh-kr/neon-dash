@@ -87,11 +87,32 @@ Home Screen launches automatically fill the app window. The manifest requests fu
 - Direct expanded game launch, native fullscreen from Play, and Home Screen app support.
 - Fixed 120 Hz simulation with interpolated character movement, consistent fast lane changes, a short landing jump buffer, and an airborne downward swipe that lands into a slide.
 - Cached scenery, gradients, and collectible sprites; batched track drawing; object sorting only on spawn; reduced distant detail; a bounded canvas resolution; and a 64-particle pool. The animation loop stops when paused or hidden, and after game-over effects settle. Reduced-motion welcome screens stay still. Resuming, restarting, resizing, or changing the runner color redraws as needed.
+- Richer neon halos and soft street reflections use a fixed light atlas instead of live blur filters. The road and fixed rails are baked into the district backdrop. Tiny distant halos are culled.
 - Centered SVG toolbar icons, keyboard activation of focused buttons, named instructions dialogs, and welcome screens that adapt to the game frame's height.
 - Collision checks cover each obstacle's whole body. Lane changes into passing obstacles and slides ending inside gates still collide; successful jump/slide clears count once after passing the hazard.
 - Original procedural game artwork and a neon plastic-toy runner mascot for the game logo, browser tab, and Home Screen icons. No third-party runtime assets, fonts, APIs, or tracking.
 
 Saved scores are specific to the browser and origin. If browser storage is blocked, the game still works but preferences and scores cannot persist. This is a single-player game with local scores; it does not include an online leaderboard.
+
+## Memory, storage, and caches
+
+The game writes at most three fixed `localStorage` keys: `neon-dash-best`, `neon-dash-color`, and `neon-dash-sound`. It stores no run history, replay, frame log, or growing collection. Unchanged values do not trigger writes. Invalid or oversized existing game values are replaced with valid defaults; valid scores/preferences and unrelated keys are preserved. The three serialized keys and values use fewer than 160 UTF-16 bytes, excluding browser metadata. Blocked storage and quota errors fall back to memory-only preferences.
+
+Temporary resources are bounded:
+
+| Resource | Budget and cleanup |
+| --- | --- |
+| Obstacles and collectibles | 128 reusable slots; passed/collected objects return to the pool; restart reuses buffers and resets every flag |
+| Drawing coordinates | 4,096 reusable scratch points; particle targets copy coordinates rather than retaining scratch objects |
+| Cosmetic particles | 64 reusable slots; no target-object references |
+| Audio | One context and at most 32 connected voices; ended voices disconnect; bursts drop excess effects; hidden/muted pages stop voices and suspend audio |
+| Collectible atlas | One 640×256 sheet, about 640 KiB of raw RGBA pixels |
+| Lighting atlas | One 512×128 sheet, about 256 KiB of raw RGBA pixels |
+| Game canvas and backdrop | Each bounded by the 1.8-million-pixel render budget |
+
+When hidden or leaving a page, the game pauses, cancels animation callbacks, resets particles/toasts, empties both atlases and the backdrop, and reduces the display canvas to one pixel. Returning rebuilds the graphics for the current viewport and preserves the paused run and saved preferences. Visible pause screens retain the textures they still display.
+
+The app does not create Cache Storage, IndexedDB databases, or service-worker caches. Browser-managed HTTP caching helps subsequent loads and is managed by the browser; clearing it on each run would cause unnecessary downloads and would not reclaim the game's live render buffers. Asset version URLs pick up published updates. JavaScript garbage collection and the browser's native/GPU allocators remain under browser control; the game bounds its resources and releases references/buffers rather than trying to force garbage collection during play.
 
 ## Security and runtime
 
@@ -108,6 +129,8 @@ Stored colors and difficulty values accept only known own properties, and invali
 | `engine.js` | Game simulation, obstacle generation, and collision detection |
 | `game.js` | Canvas rendering, input, audio, and browser storage |
 | `audio.js` | Original looping music, effects, and audio lifecycle |
+| `storage.js` | Validated fixed-schema preferences and deduplicated writes |
+| `graphics.js` | Fixed light atlas, reflections, and explicit buffer release |
 | `character.js` | Original vector character and articulated poses |
 | `items.js` | Cached coin and power-up artwork |
 | `effects.js` | Fixed-size pool for gameplay particles |
@@ -115,6 +138,8 @@ Stored colors and difficulty values accept only known own properties, and invali
 | `manifest.webmanifest` | Home Screen launch mode and app metadata |
 | `icons/` | Toy runner mascot, browser favicons, and Home Screen icons |
 | `tests/engine.test.cjs` | Simulation regression tests |
+| `tests/storage.test.cjs` | Storage bounds, recovery, and write deduplication |
+| `tests/effects.test.cjs` | Particle limits and scratch-target independence |
 
 To change difficulty, edit `MODES` in `engine.js`. To change runner colors, edit `palettes` in `game.js` and the corresponding choices in `index.html`.
 
@@ -124,20 +149,33 @@ With Node.js installed, run:
 
 ```sh
 node tests/engine.test.cjs
+node tests/storage.test.cjs
+node tests/effects.test.cjs
 node --check engine.js
 node --check game.js
 node --check audio.js
+node --check storage.js
+node --check graphics.js
 node --check fullscreen.js
 node --check character.js
 node --check items.js
 node --check effects.js
 ```
 
-The 24 simulation tests cover collisions, movement, coin scoring, pause/resume, difficulty, safe obstacle generation, buffered jumps, airborne slides, depth order, shield protection, magnet collection, pickup expiry/reset, cargo crates, and the opening trail. They also cover late lane-entry collisions, slides expiring inside gates, clear counting, invalid modes/time steps, and 30-minute simulated runs in every difficulty with bounded object counts.
+The 34 unit tests include 27 simulation tests, six storage tests, and one particle test. Simulation coverage includes collisions, movement, coin scoring, pause/resume, difficulty, safe obstacle generation, buffered jumps, airborne slides, depth order, shield protection, magnet collection, pickup expiry/reset, cargo crates, and the opening trail. They also cover late lane-entry collisions, slides expiring inside gates, clear counting, invalid modes/time steps, 30-minute simulated runs in every difficulty, 1,000 restarts reusing the same buffers, recycling flags, and pool saturation. Storage coverage includes 10,000 changing saves without new keys, unchanged-value write deduplication, valid preference preservation, corrupt/oversized value repair, invalid input rejection, and blocked/quota-failed persistence. Particles verify their targets remain independent of recycled drawing points.
 
 Headless Chromium checks cover real swipes before release, long holds, touch cancellation, fixed simulation ticks, music/mute/pause behavior, character jump/crouch poses, pickup timers, all three districts, collision/restart advice, and phone/desktop layouts. The source review also checked SVG centering in expanded and settings views at 320×568, 390×844, 640×320, 844×390, and 1440×900; idle animation suspension; keyboard button activation; paused color changes; page restoration; reduced motion; corrupt/blocked storage; visible goal bars; accessible dialog names; and CSP enforcement.
 
-Direct Chromium profiling measured average game frame callbacks around 0.8–1.0 ms on the test environment, with a 1.8-million-pixel canvas budget. These are local headless measurements, not guarantees for physical devices. Native fullscreen success events are simulated because headless Chromium cannot enter OS fullscreen; physical iOS Home Screen launches still need device verification.
+Memory checks combined 18 seconds of live rendering, an accelerated one-hour simulation, 200 immediate restarts, and eight hide/restore cycles. Retained JavaScript heap settled around 1.4 MiB after warmup, active objects stayed within their fixed pool, connected audio voices never exceeded 32, and hidden rendering buffers shrank to one pixel combined. The heap measurement excludes native browser/GPU memory; test instrumentation requested garbage collection only to compare retained allocations, and game code never does so.
+
+Direct Chromium profiling compared the same phone and desktop layouts before and after the rendering changes:
+
+| Layout | Mean frame callback, before → after | 95th-percentile callback, before → after |
+| --- | --- | --- |
+| Phone | 0.91 → 0.83 ms | 1.9 → 1.5 ms |
+| Desktop | 0.78 → 0.78 ms | 1.6 → 1.4 ms |
+
+These are local headless measurements with a 1.8-million-pixel canvas budget, not guarantees for physical devices or total frame/GPU execution times. Native fullscreen success events are simulated because headless Chromium cannot enter OS fullscreen; physical iOS Home Screen launches still need device verification.
 
 ## License
 
