@@ -7,6 +7,8 @@
   const pauseButton = $('pause-button');
   const overlayTitle = $('overlay-title');
   const game = new RunnerEngine();
+  const geometry = NeonGeometry;
+  const gesture = new NeonSwipe();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const districts = [
     {
@@ -61,8 +63,7 @@
     runnerColor = 'mint',
     toastTimer;
   let coinGoal = false,
-    distanceGoal = false,
-    touchStart = null;
+    distanceGoal = false;
   const palettes = {
     mint: { color: '#72f3cb', name: 'The Night Shift' },
     pink: { color: '#ff7baf', name: 'Pink Noise' },
@@ -219,7 +220,7 @@
     }
   }
   function startRun() {
-    touchStart = null;
+    gesture.reset();
     void NeonFullscreen.enterNative();
     NeonAudio.unlock();
     NeonAudio.setPlaying(true);
@@ -254,7 +255,7 @@
     scheduleFrame();
   }
   function finishRun() {
-    touchStart = null;
+    gesture.reset();
     finishShown = true;
     NeonAudio.setPlaying(false);
     const record = game.score > best;
@@ -296,7 +297,7 @@
     $('play-button').focus({ preventScroll: true });
   }
   function togglePause() {
-    touchStart = null;
+    gesture.reset();
     if (game.state === 'running') {
       NeonAudio.setPlaying(false);
       accumulator = 0;
@@ -448,36 +449,54 @@
   canvas.addEventListener('touchstart', (event) => event.preventDefault(), { passive: false });
   canvas.addEventListener('pointerdown', (event) => {
     if (!event.isPrimary || event.button !== 0 || game.state !== 'running') return;
+    if (
+      !gesture.begin(
+        event.pointerId,
+        event.clientX,
+        event.clientY,
+        canvas.getBoundingClientRect().width,
+      )
+    )
+      return;
     event.preventDefault();
-    touchStart = { x: event.clientX, y: event.clientY, id: event.pointerId };
-    canvas.setPointerCapture(event.pointerId);
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch (_) {
+      /* Window listeners cover capture failures. */
+    }
   });
   function swipe(event) {
-    if (!touchStart || event.pointerId !== touchStart.id) return;
-    const dx = event.clientX - touchStart.x,
-      dy = event.clientY - touchStart.y;
-    const threshold = Math.max(14, Math.min(24, width * 0.04));
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < threshold) return;
-    touchStart = null;
-    action(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy < 0 ? 'jump' : 'slide');
+    if (game.state !== 'running' || event.pointerId !== gesture.id) return;
+    if (event.pointerType === 'mouse' && !(event.buttons & 1)) {
+      gesture.cancel(event.pointerId);
+      return;
+    }
+    const samples = event.getCoalescedEvents?.();
+    if (samples)
+      for (const sample of samples) {
+        const direction = gesture.move(event.pointerId, sample.clientX, sample.clientY);
+        if (direction) action(direction);
+      }
+    const direction = gesture.move(event.pointerId, event.clientX, event.clientY);
+    if (direction) action(direction);
   }
-  canvas.addEventListener('pointermove', swipe, { passive: true });
-  canvas.addEventListener('pointerup', (event) => {
-    if (event.pointerId !== touchStart?.id) return;
-    swipe(event);
-    touchStart = null;
+  // Keep a started swipe usable at canvas edges and when capture is unavailable.
+  window.addEventListener('pointermove', swipe, { passive: true });
+  window.addEventListener('pointerup', (event) => {
+    const direction = gesture.end(event.pointerId, event.clientX, event.clientY);
+    if (direction && game.state === 'running') action(direction);
   });
   function cancelSwipe(event) {
-    if (event.pointerId === touchStart?.id) touchStart = null;
+    gesture.cancel(event.pointerId);
   }
-  canvas.addEventListener('pointercancel', cancelSwipe);
+  window.addEventListener('pointercancel', cancelSwipe);
   canvas.addEventListener('lostpointercapture', cancelSwipe);
 
   // Perspective projection and original procedural scenery.
   const projectionPoints = Array.from({ length: 4096 }, () => ({ x: 0, y: 0, scale: 0 }));
   let projectionCursor = 0;
   function project(x, z, elevation = 0) {
-    const scale = 17 / (Math.max(-3, z) + 17);
+    const scale = 17 / (Math.max(geometry.nearClip, z) + 17);
     const point = projectionPoints[projectionCursor];
     projectionCursor = (projectionCursor + 1) % projectionPoints.length;
     point.x = width / 2 + x * width * 0.27 * scale;
@@ -740,25 +759,28 @@
       );
     }
   }
-  function box(x, z, halfWidth, length, tall, colors, drawFront = true) {
-    const a = project(x - halfWidth, z),
-      b = project(x + halfWidth, z),
-      c = project(x + halfWidth, z, tall),
-      d = project(x - halfWidth, z, tall);
-    const farL = project(x - halfWidth, z + length, tall),
-      farR = project(x + halfWidth, z + length, tall);
+  function box(x, z, halfWidth, length, tall, colors, drawFront = true, base = 0) {
+    const a = project(x - halfWidth, z, base),
+      b = project(x + halfWidth, z, base),
+      c = project(x + halfWidth, z, base + tall),
+      d = project(x - halfWidth, z, base + tall);
+    const farL = project(x - halfWidth, z + length, base + tall),
+      farR = project(x + halfWidth, z + length, base + tall);
     polygon([d, c, farR, farL], colors[2], '#ffffff15');
-    if (x < 0) polygon([b, c, farR, project(x + halfWidth, z + length)], colors[1]);
-    else polygon([a, d, farL, project(x - halfWidth, z + length)], colors[1]);
+    if (x < 0) polygon([b, c, farR, project(x + halfWidth, z + length, base)], colors[1]);
+    else polygon([a, d, farL, project(x - halfWidth, z + length, base)], colors[1]);
     if (drawFront) polygon([a, b, c, d], colors[0], '#ffffff20');
   }
   function drawObject(object) {
     if (
       object.collected ||
-      (object.type === 'train' ? object.z + 17 < -3 : object.z < -3) ||
+      (object.type === 'train'
+        ? object.z + geometry.train.length < geometry.nearClip
+        : object.z < geometry.nearClip) ||
       object.z > 280
     )
       return;
+    const shape = geometry[object.type];
     const x = object.lane - 1,
       z = object.z,
       p = project(x, z);
@@ -768,13 +790,21 @@
       const radius = Math.max(1.5, height * (boost ? 0.033 : 0.021) * c.scale);
       NeonItems.draw(ctx, object.type, c.x, c.y, radius, Math.abs(ambient * 8 + z));
     } else if (object.type === 'train') {
-      const visibleFront = Math.max(-3, z),
-        visibleLength = z + 17 - visibleFront;
-      box(x, visibleFront, 0.43, visibleLength, 2.25, ['#446980', '#254257', '#718395'], z >= -3);
-      if (z < -3) {
+      const visibleFront = Math.max(geometry.nearClip, z),
+        visibleLength = z + shape.length - visibleFront;
+      box(
+        x,
+        visibleFront,
+        shape.halfWidth,
+        visibleLength,
+        shape.height,
+        ['#446980', '#254257', '#718395'],
+        z >= geometry.nearClip,
+      );
+      if (z < geometry.nearClip) {
         const side = x < 0 ? x + 0.435 : x - 0.435;
         for (let i = 3; i < 16; i += 4)
-          if (z + i > -3)
+          if (z + i > geometry.nearClip)
             polygon(
               [
                 project(side, z + i, 1.15),
@@ -826,21 +856,21 @@
           '#a3c7d26d',
         );
     } else if (object.type === 'barrier') {
-      box(x, z, 0.45, 1, 0.78, ['#db9b95', '#9e626e', '#f2bbab']);
+      box(x, z, shape.halfWidth, shape.length, shape.height, ['#db9b95', '#9e626e', '#f2bbab']);
       for (let i = 0; i < 5; i++) {
         const offset = -0.4 + i * 0.18;
         polygon(
           [
             project(x + offset, z - 0.03, 0.06),
             project(x + offset + 0.1, z - 0.03, 0.06),
-            project(x + offset + 0.22, z - 0.03, 0.72),
+            project(x + Math.min(shape.halfWidth, offset + 0.22), z - 0.03, 0.72),
             project(x + offset + 0.12, z - 0.03, 0.72),
           ],
           '#492e43',
         );
       }
     } else if (object.type === 'crate') {
-      box(x, z, 0.42, 2.1, 0.96, ['#b98c53', '#715d49', '#d2ae78']);
+      box(x, z, shape.halfWidth, shape.length, shape.height, ['#b98c53', '#715d49', '#d2ae78']);
       for (const offset of [-0.28, 0.28])
         line(
           project(x + offset, z - 0.05, 0.05),
@@ -861,17 +891,21 @@
         Math.max(1, p.scale * 4),
       );
     } else if (object.type === 'gate') {
-      for (const offset of [-0.43, 0.43])
-        box(x + offset, z, 0.045, 1.2, 2.1, ['#887ca8', '#4a4463', '#aba1c6']);
-      polygon(
-        [
-          project(x - 0.47, z, 1.25),
-          project(x + 0.47, z, 1.25),
-          project(x + 0.47, z, 2.08),
-          project(x - 0.47, z, 2.08),
-        ],
-        '#ab638c',
-        '#ffadd2',
+      for (const offset of [-shape.postOffset, shape.postOffset])
+        box(x + offset, z, shape.postHalfWidth, shape.length, shape.height, [
+          '#887ca8',
+          '#4a4463',
+          '#aba1c6',
+        ]);
+      box(
+        x,
+        z,
+        shape.beamHalfWidth,
+        shape.length,
+        shape.beamTop - shape.clearance,
+        ['#ab638c', '#824b72', '#ffadd2'],
+        true,
+        shape.clearance,
       );
       const gateLight = project(x, z, 1.3);
       NeonGraphics.light(ctx, gateLight.x, gateLight.y, width * 0.29 * p.scale, 36 * p.scale, 1);
@@ -894,10 +928,10 @@
     }
   }
   function runner() {
-    const portrait = document.body.classList.contains('game-view-expanded') && width < height;
-    const p = project(viewLane - 1, 8.5),
-      scale = Math.min(width / (portrait ? 420 : 900), height / 530) * 0.95;
-    const jumping = viewJump * height * 0.083;
+    const p = project(viewLane - 1, geometry.runner.z);
+    const unitHeight = height * 0.19 * p.scale;
+    const scale = (unitHeight * geometry.runner.height) / geometry.runner.artHeight;
+    const jumping = viewJump * unitHeight;
     ctx.fillStyle = '#070d1a65';
     ctx.beginPath();
     ctx.ellipse(p.x, p.y + 4, 30 * scale * (1 - viewJump * 0.16), 8 * scale, 0, 0, Math.PI * 2);
@@ -937,7 +971,7 @@
     const objects = game.state === 'ready' ? demoObjects : game.objects;
     let playerDrawn = false;
     for (const object of objects) {
-      if (!playerDrawn && object.z < 8.5) {
+      if (!playerDrawn && object.z < geometry.runner.z) {
         runner();
         playerDrawn = true;
       }
@@ -957,8 +991,18 @@
     if (document.hidden) return;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
+    if (width !== rect.width || height !== rect.height) gesture.reset();
     width = rect.width;
     height = rect.height;
+    // Match the forgiving torso core to its visible CSS size in either aspect ratio.
+    game.runnerHalfWidth = Math.max(
+      0.08,
+      Math.min(
+        0.4,
+        (geometry.runner.coreHalfWidth * height * 0.19 * geometry.runner.height) /
+          (geometry.runner.artHeight * width * 0.27),
+      ),
+    );
     // Bound raster work on high-density phones and large desktop displays.
     const dpr = Math.min(2, window.devicePixelRatio || 1, Math.sqrt(1800000 / (width * height)));
     const pixelWidth = Math.round(width * dpr),
@@ -1027,7 +1071,7 @@
         for (const event of game.events) if (event === 'coin' || event === 'crash') sound(event);
         for (const effect of game.effects) feedback(effect);
       }
-      const alpha = Math.min(1, accumulator / tick);
+      const alpha = game.state === 'over' ? 1 : Math.min(1, accumulator / tick);
       viewLane = previousPose.lane + (game.visualLane - previousPose.lane) * alpha;
       viewJump = previousPose.jump + (game.jumpHeight - previousPose.jump) * alpha;
       if (Math.floor(game.distance / 750) % districts.length !== districtIndex)

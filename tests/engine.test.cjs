@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { RunnerEngine, MODES } = require('../engine.js');
+const { RunnerEngine, MODES, GEOMETRY } = require('../engine.js');
 
 function running() {
   const game = new RunnerEngine(() => 0.1);
@@ -207,12 +207,13 @@ test('pickups activate on contact and pause freezes their timers', () => {
   ]) {
     const game = running();
     game.objects = [{ type, lane: 1, z: 10 }];
-    game.update(0.01);
-    assert.equal(game[property], duration);
+    game.update(0.03);
+    assert.ok(game[property] <= duration && game[property] >= duration - 0.03);
     assert.ok(game.events.includes(type));
+    const remaining = game[property];
     game.pause();
     game.update(0.05);
-    assert.equal(game[property], duration);
+    assert.equal(game[property], remaining);
     game.start();
     assert.equal(game[property], 0);
   }
@@ -357,5 +358,205 @@ test('the pool never expands if extra objects are requested beyond its budget', 
   assert.equal(game.objects.length, 128);
   assert.equal(game.freeObjects.length, 0);
   game.clearObjects();
+  assert.equal(game.freeObjects.length, 128);
+});
+
+test('each solid obstacle uses its own lateral edge, without hitting decorative glow', () => {
+  for (const type of ['train', 'barrier', 'crate']) {
+    const edge = GEOMETRY[type].halfWidth + GEOMETRY.runner.halfWidth;
+    for (const [offset, expected] of [
+      [edge - 0.001, 'over'],
+      [edge, 'running'],
+      [edge + 0.001, 'running'],
+    ]) {
+      const game = running();
+      game.lane = game.visualLane = 1 + offset;
+      game.addObject(type, 1, 8.5);
+      game.update(1 / 120);
+      assert.equal(game.state, expected, `${type}, offset ${offset}`);
+    }
+  }
+});
+test('fast diagonal travel cannot tunnel through a thin obstacle between ticks', () => {
+  const game = running();
+  game.start('rush');
+  game.clearObjects();
+  game.time = 10000;
+  game.visualLane = 0;
+  game.lane = 2;
+  game.addObject('barrier', 1, 9.3);
+  game.update(0.05);
+  assert.equal(game.state, 'over');
+});
+test('crossing a lane before an obstacle reaches the runner is not a collision', () => {
+  const game = running();
+  game.start('rush');
+  game.clearObjects();
+  game.time = 10000;
+  game.visualLane = 0;
+  game.lane = 2;
+  game.addObject('barrier', 0, 10.9);
+  game.update(0.05);
+  assert.equal(game.state, 'running');
+});
+test('jump clearance follows the visible barrier and crate heights', () => {
+  for (const [type, elevation, expected] of [
+    ['barrier', 0.8, 'running'],
+    ['crate', 0.88, 'over'],
+    ['crate', 1.05, 'running'],
+  ]) {
+    const game = running();
+    game.jumpHeight = elevation;
+    game.jumpTime = 0.46 * (1 + Math.sqrt(1 - elevation / 1.7));
+    game.addObject(type, 1, 8.5);
+    game.update(1 / 120);
+    assert.equal(game.state, expected, type);
+  }
+});
+test('sliding clears a gate opening but cannot pass through its solid posts', () => {
+  for (const [offset, expected] of [
+    [0, 'running'],
+    [-GEOMETRY.gate.postOffset, 'over'],
+    [GEOMETRY.gate.postOffset, 'over'],
+  ]) {
+    const game = running();
+    game.lane = game.visualLane = 1 + offset;
+    game.action('slide');
+    game.addObject('gate', 1, 8.5);
+    game.update(1 / 120);
+    assert.equal(game.state, expected);
+  }
+});
+test('a train remains solid at the highest jump point', () => {
+  const game = running();
+  game.jumpTime = 0.46;
+  game.jumpHeight = 1.7;
+  game.addObject('train', 1, 8.5);
+  game.update(1 / 120);
+  assert.equal(game.state, 'over');
+});
+test('passed obstacle tails do not create invisible collisions', () => {
+  for (const type of ['train', 'barrier', 'crate', 'gate']) {
+    const game = running();
+    game.addObject(
+      type,
+      1,
+      GEOMETRY.runner.z - GEOMETRY.runner.halfDepth - GEOMETRY[type].length - 0.01,
+    );
+    game.update(1 / 120);
+    assert.equal(game.state, 'running', type);
+  }
+});
+test('pickups require physical contact, including jump height and lateral distance', () => {
+  for (const [z, offset, jumping, expected] of [
+    [10, 0, false, 0],
+    [8.5, 0.5, false, 0],
+    [8.5, 0, true, 0],
+    [8.5, 0, false, 1],
+  ]) {
+    const game = running();
+    game.lane = game.visualLane = 1 + offset;
+    if (jumping) {
+      game.jumpTime = 0.46;
+      game.jumpHeight = 1.7;
+    }
+    game.addObject('coin', 1, z);
+    game.update(1 / 120);
+    assert.equal(game.coins, expected);
+  }
+});
+test('fast travel collects a pickup crossed completely within a tick', () => {
+  const game = running();
+  game.start('rush');
+  game.clearObjects();
+  game.time = 10000;
+  game.addObject('coin', 1, 9.5);
+  game.update(0.05);
+  assert.equal(game.coins, 1);
+  assert.equal(game.objects.length, 0);
+});
+test('a shield reached before a hazard protects the runner regardless of drawing order', () => {
+  for (const reverse of [false, true]) {
+    const game = running();
+    game.start('rush');
+    game.clearObjects();
+    game.time = 10000;
+    game.addObject('shield', 1, 9.5);
+    game.addObject('train', 1, 10);
+    if (reverse) game.objects.reverse();
+    game.update(0.05);
+    assert.equal(game.state, 'running');
+    assert.deepEqual(game.events, ['shield', 'shield-break']);
+  }
+});
+test('a fatal collision cannot award a pickup that would arrive later in the tick', () => {
+  for (const type of ['shield', 'coin']) {
+    const game = running();
+    game.start('rush');
+    game.clearObjects();
+    game.time = 10000;
+    game.addObject(type, 1, 9.5);
+    game.addObject('train', 1, 8.5);
+    game.update(0.05);
+    assert.equal(game.state, 'over');
+    assert.equal(game.shieldTime, 0);
+    assert.equal(game.coins, 0);
+    assert.deepEqual(game.events, ['crash']);
+    assert.equal(game.contacts.length, 0);
+  }
+});
+
+test('a wider portrait core can still slide through the gate and clear an adjacent lane', () => {
+  const game = running();
+  game.runnerHalfWidth = 0.4;
+  game.action('slide');
+  game.addObject('gate', 1, 8.5);
+  game.addObject('train', 0, 8.5);
+  game.update(1 / 120);
+  assert.equal(game.state, 'running');
+});
+
+test('a crash freezes travel at the actual contact instead of the end of the tick', () => {
+  const game = running();
+  game.start('rush');
+  game.clearObjects();
+  game.time = 10000;
+  game.addObject('train', 1, 10);
+  game.update(0.05);
+  assert.equal(game.state, 'over');
+  assert.ok(Math.abs(game.distance - (10 - GEOMETRY.runner.z - GEOMETRY.runner.halfDepth)) < 1e-5);
+  assert.ok(Math.abs(game.objects[0].z - GEOMETRY.runner.z - GEOMETRY.runner.halfDepth) < 1e-5);
+});
+test('shield expiry is evaluated at contact, rather than at the end of the tick', () => {
+  for (const [z, expected] of [
+    [8.5, 'running'],
+    [10, 'over'],
+  ]) {
+    const game = running();
+    game.start('rush');
+    game.clearObjects();
+    game.time = 10000;
+    game.shieldTime = 0.01;
+    game.addObject('train', 1, z);
+    game.update(0.05);
+    assert.equal(game.state, expected);
+  }
+});
+test('immunity expiring inside an obstacle does not postpone contact until the next tick', () => {
+  const game = running();
+  game.invulnerable = 0.01;
+  game.addObject('train', 1, 8.5);
+  game.update(0.05);
+  assert.equal(game.state, 'over');
+  assert.ok(Math.abs(game.time - 0.01) < 1e-9);
+});
+
+test('train tails remain available until their entire body passes the render clipping plane', () => {
+  const game = running();
+  game.addObject('train', 0, -18);
+  game.update(1 / 120);
+  assert.equal(game.objects.length, 1);
+  step(game, 0.15);
+  assert.equal(game.objects.length, 0);
   assert.equal(game.freeObjects.length, 128);
 });

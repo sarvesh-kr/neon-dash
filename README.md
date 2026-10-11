@@ -55,6 +55,12 @@ git push -u origin main
 | Start / restart | Space or the green button | Green button |
 | Enter / exit fullscreen | F or the corners button | Corners button |
 
+Swipes commit once when movement passes a 14–24 CSS-pixel threshold and one axis is clear. Ambiguous diagonals wait for a clearer direction, or use the dominant axis on release. Taps and hold jitter do not move the runner. Only the contact that starts the swipe owns it; extra fingers, cancelled touches, pause/restart, and viewport changes cannot reuse an old gesture. Window listeners preserve edge swipes when pointer capture is unavailable.
+
+Obstacle drawing and collisions share dimensions in `NeonGeometry`. Contacts sweep through the previous and current simulation positions, including lateral movement and jump/crouch height, to avoid crossing thin obstacles between ticks. Gate beams and posts are separate solid parts; lighting and shadows are decorative. The runner uses a forgiving torso core sized to the viewport. Jump rendering uses the same elevation scale as obstacles, and a slide ducks immediately before smoothly standing again.
+
+Contacts resolve in chronological order. Shield/immunity expiry is evaluated at contact time, and a fatal collision freezes the runner and scenery at that point. Pickups reached later cannot count towards a crashed run. Ground-level coins can be missed while jumping over them; the magnet deliberately collects from a wider area.
+
 Trains must be dodged by switching lanes. Jumping will not clear a train. The game pauses automatically when you leave the tab or window.
 
 Blue **magnets** attract coins from all three lanes for 10 seconds. Mint **shields** protect against one collision for up to 12 seconds, with brief protection after the shield breaks so the same obstacle cannot immediately end the run. Timers appear beneath the score and stop while paused. Every run begins with a short coin trail and an early shield. Further pickups appear along safe routes.
@@ -103,6 +109,7 @@ Temporary resources are bounded:
 | Resource | Budget and cleanup |
 | --- | --- |
 | Obstacles and collectibles | 128 reusable slots; passed/collected objects return to the pool; restart reuses buffers and resets every flag |
+| Contact checks | Reused queue bounded by those 128 slots; reused motion and intersection scratch records |
 | Drawing coordinates | 4,096 reusable scratch points; particle targets copy coordinates rather than retaining scratch objects |
 | Cosmetic particles | 64 reusable slots; no target-object references |
 | Audio | One context and at most 32 connected voices; ended voices disconnect; bursts drop excess effects; hidden/muted pages stop voices and suspend audio |
@@ -127,6 +134,7 @@ Stored colors and difficulty values accept only known own properties, and invali
 | `index.html` | Interface, instructions, and accessible controls |
 | `styles.css` | Responsive layout and visual design |
 | `engine.js` | Game simulation, obstacle generation, and collision detection |
+| `input.js` | Single-contact swipe recognition and cancellation |
 | `game.js` | Canvas rendering, input, audio, and browser storage |
 | `audio.js` | Original looping music, effects, and audio lifecycle |
 | `storage.js` | Validated fixed-schema preferences and deduplicated writes |
@@ -138,6 +146,7 @@ Stored colors and difficulty values accept only known own properties, and invali
 | `manifest.webmanifest` | Home Screen launch mode and app metadata |
 | `icons/` | Toy runner mascot, browser favicons, and Home Screen icons |
 | `tests/engine.test.cjs` | Simulation regression tests |
+| `tests/input.test.cjs` | Gesture thresholds, direction locking, and contact ownership |
 | `tests/storage.test.cjs` | Storage bounds, recovery, and write deduplication |
 | `tests/effects.test.cjs` | Particle limits and scratch-target independence |
 
@@ -149,9 +158,11 @@ With Node.js installed, run:
 
 ```sh
 node tests/engine.test.cjs
+node tests/input.test.cjs
 node tests/storage.test.cjs
 node tests/effects.test.cjs
 node --check engine.js
+node --check input.js
 node --check game.js
 node --check audio.js
 node --check storage.js
@@ -162,18 +173,22 @@ node --check items.js
 node --check effects.js
 ```
 
-The 34 unit tests include 27 simulation tests, six storage tests, and one particle test. Simulation coverage includes collisions, movement, coin scoring, pause/resume, difficulty, safe obstacle generation, buffered jumps, airborne slides, depth order, shield protection, magnet collection, pickup expiry/reset, cargo crates, and the opening trail. They also cover late lane-entry collisions, slides expiring inside gates, clear counting, invalid modes/time steps, 30-minute simulated runs in every difficulty, 1,000 restarts reusing the same buffers, recycling flags, and pool saturation. Storage coverage includes 10,000 changing saves without new keys, unchanged-value write deduplication, valid preference preservation, corrupt/oversized value repair, invalid input rejection, and blocked/quota-failed persistence. Particles verify their targets remain independent of recycled drawing points.
+The 58 unit tests include 43 simulation tests, eight gesture tests, six storage tests, and one particle test. Simulation coverage includes collisions, movement, coin scoring, pause/resume, difficulty, safe obstacle generation, buffered jumps, airborne slides, depth order, shield protection, magnet collection, pickup expiry/reset, cargo crates, and the opening trail. They also cover late lane-entry collisions, slides expiring inside gates, clear counting, invalid modes/time steps, 30-minute simulated runs in every difficulty, 1,000 restarts reusing the same buffers, recycling flags, and pool saturation. Contact regressions check individual obstacle edges/heights, swept diagonal crossings, disjoint movement paths, gate posts, passed tails, train clipping-plane lifecycle, airborne pickups, chronological shield collection, no post-crash rewards, portrait core clearance, impact-position freezing, and expiry during contact. Gesture tests cover four directions, CSS-pixel thresholds, hold jitter, diagonal deferral/release, one action per contact, extra fingers, cancellation, and invalid coordinates. Storage coverage includes 10,000 changing saves without new keys, unchanged-value write deduplication, valid preference preservation, corrupt/oversized value repair, invalid input rejection, and blocked/quota-failed persistence. Particles verify their targets remain independent of recycled drawing points.
 
 Headless Chromium checks cover real swipes before release, long holds, touch cancellation, fixed simulation ticks, music/mute/pause behavior, character jump/crouch poses, pickup timers, all three districts, collision/restart advice, and phone/desktop layouts. The source review also checked SVG centering in expanded and settings views at 320×568, 390×844, 640×320, 844×390, and 1440×900; idle animation suspension; keyboard button activation; paused color changes; page restoration; reduced motion; corrupt/blocked storage; visible goal bars; accessible dialog names; and CSP enforcement.
 
-Memory checks combined 18 seconds of live rendering, an accelerated one-hour simulation, 200 immediate restarts, and eight hide/restore cycles. Retained JavaScript heap settled around 1.4 MiB after warmup, active objects stayed within their fixed pool, connected audio voices never exceeded 32, and hidden rendering buffers shrank to one pixel combined. The heap measurement excludes native browser/GPU memory; test instrumentation requested garbage collection only to compare retained allocations, and game code never does so.
+Additional browser input checks use real multi-touch events, diagonal movement and release, swipes outside viewport/canvas edges, rotation during contact, pointer-capture failure, lost mouse buttons, and a fresh swipe after rotation. They compare the drawn character transform and responsive torso core with collision coordinates at high display density.
 
-Direct Chromium profiling compared the same phone and desktop layouts before and after the rendering changes:
+Memory checks combined 18 seconds of live rendering, an accelerated one-hour simulation, 200 immediate restarts, and eight hide/restore cycles. With the contact updates, retained JavaScript heap settled around 1.5 MiB after warmup, active objects stayed within their fixed pool, connected audio voices never exceeded 32, and hidden rendering buffers shrank to one pixel combined. The heap measurement excludes native browser/GPU memory; test instrumentation requested garbage collection only to compare retained allocations, and game code never does so.
+
+Direct Chromium profiling of the earlier cached-lighting update compared the same phone and desktop layouts before and after those rendering changes:
 
 | Layout | Mean frame callback, before → after | 95th-percentile callback, before → after |
 | --- | --- | --- |
 | Phone | 0.91 → 0.83 ms | 1.9 → 1.5 ms |
 | Desktop | 0.78 → 0.78 ms | 1.6 → 1.4 ms |
+
+The contact update was also checked in a clean preview: mean frame callbacks were 0.81 ms on the phone layout and 0.70 ms on desktop (95th percentiles 1.8 ms and 1.1 ms). Earlier runs varied under the shared test environment, so these measurements are a runtime check rather than a guaranteed performance improvement.
 
 These are local headless measurements with a 1.8-million-pixel canvas budget, not guarantees for physical devices or total frame/GPU execution times. Native fullscreen success events are simulated because headless Chromium cannot enter OS fullscreen; physical iOS Home Screen launches still need device verification.
 
