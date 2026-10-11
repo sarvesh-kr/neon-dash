@@ -9,10 +9,11 @@
   <meta name="apple-mobile-web-app-title" content="Neon Dash">
   <meta name="description" content="Hit the neon streets. A free browser endless runner with trains, coins, and one more run.">
   <title>Neon Dash — Keep moving.</title>
-  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/runner-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="./icons/runner-64.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/runner-apple-touch.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css?v=polish-3">
+  <link rel="stylesheet" href="./styles.css?v=toy-logo-1">
   <script src="./engine.js?v=polish-3" defer></script>
   <script src="./audio.js?v=polish-3" defer></script>
   <script src="./fullscreen.js?v=polish-3" defer></script>
@@ -24,7 +25,7 @@
 <body class="game-view-expanded">
   <div class="app">
     <header class="topbar">
-      <a class="brand" href="./" aria-label="Neon Dash home"><span class="brand-icon">ϟ</span> NEON<span>DASH</span><span class="beta">ARCADE</span></a>
+      <a class="brand" href="./" aria-label="Neon Dash home"><img class="brand-icon" src="./icons/runner-mascot.webp" width="40" height="40" alt=""> NEON<span>DASH</span><span class="beta">ARCADE</span></a>
       <nav aria-label="Game options"><button class="text-button" id="help-button"><span>ⓘ</span> How to play</button></nav>
     </header>
 
@@ -38,6 +39,7 @@
           <div class="hud" id="hud" hidden><div><span>DISTANCE</span><strong id="distance"><b id="distance-value">0</b><span> m</span></strong></div><div class="coin-stat"><span>COINS</span><strong><i>◆</i> <b id="coins">0</b></strong></div></div>
           <div class="boost-status" aria-label="Active power-ups"><span id="magnet-status" hidden><i class="boost-symbol">∩</i><b id="magnet-label">MAGNET</b><em id="magnet-meter"></em></span><span id="shield-status" hidden><i class="boost-symbol">◇</i><b id="shield-label">SHIELD</b><em id="shield-meter"></em></span></div>
           <div class="overlay" id="overlay">
+            <img class="game-logo" src="./icons/runner-mascot.webp" width="80" height="80" alt="Neon Dash toy runner mascot" fetchpriority="high">
             <div class="title-badge">NO FINISH LINE. JUST YOU.</div>
             <h2 id="overlay-title">OWN THE<br><span>NIGHT.</span></h2>
             <p id="overlay-copy">Dodge the rush. Find your flow. Grab a boost.</p>

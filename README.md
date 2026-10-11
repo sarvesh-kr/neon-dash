@@ -19,7 +19,7 @@ Then visit `http://localhost:8000`.
 ## Host on GitHub Pages
 
 1. Create a GitHub repository, such as `neon-dash`.
-2. Upload the **contents** of this folder to the repository root. `index.html` must be at the root, alongside `styles.css`, `engine.js`, `game.js`, and `favicon.svg`.
+2. Upload the **contents** of this folder to the repository root. `index.html` must be at the root, alongside `styles.css`, `engine.js`, `game.js`, and the `icons` folder.
 3. Open the repository’s **Settings → Pages**.
 4. Under **Build and deployment**, choose **Deploy from a branch**.
 5. Select the **main** branch and **/ (root)** folder, then click **Save**.
@@ -86,7 +86,7 @@ Home Screen launches automatically fill the app window. The manifest requests fu
 - Direct expanded game launch, native fullscreen from Play, and Home Screen app support.
 - Fixed 120 Hz simulation with interpolated character movement, consistent fast lane changes, a short landing jump buffer, and an airborne downward swipe that lands into a slide.
 - Cached scenery, gradients, and collectible sprites; batched track drawing; object sorting only on spawn; reduced distant detail; a bounded canvas resolution; and a 64-particle pool. Drawing stops when paused or hidden.
-- Original procedural artwork. No third-party assets, fonts, APIs, or tracking.
+- Original procedural game artwork and a neon plastic-toy runner mascot for the game logo, browser tab, and Home Screen icons. No third-party runtime assets, fonts, APIs, or tracking.
 
 Saved scores are specific to the browser and origin. If browser storage is blocked, the game still works but preferences and scores cannot persist. This is a single-player game with local scores; it does not include an online leaderboard.
 
@@ -104,8 +104,7 @@ Saved scores are specific to the browser and origin. If browser storage is block
 | `effects.js` | Fixed-size pool for gameplay particles |
 | `fullscreen.js` | Fullscreen, orientation requests, and viewport fallback |
 | `manifest.webmanifest` | Home Screen launch mode and app metadata |
-| `icons/` | Home Screen and app icons |
-| `favicon.svg` | Original lightning icon |
+| `icons/` | Toy runner mascot, browser favicons, and Home Screen icons |
 | `tests/engine.test.cjs` | Simulation regression tests |
 
 To change difficulty, edit `MODES` in `engine.js`. To change runner colors, edit `palettes` in `game.js` and the corresponding choices in `index.html`.
