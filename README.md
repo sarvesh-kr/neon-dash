@@ -4,7 +4,7 @@ An original browser endless runner inspired by three-lane arcade games. Dodge mi
 
 **Plain HTML, CSS, and JavaScript. No dependencies, downloads, build step, or backend. Ready for GitHub Pages.**
 
-[Play Neon Dash](https://sarvesh-kr.github.io/neon-dash/)
+[Play Neon Dash](https://nd.sarvesh.si/)
 
 ## Play locally
 
@@ -26,6 +26,12 @@ Then visit `http://localhost:8000`.
 6. Once GitHub finishes deployment, play at `https://YOUR-USERNAME.github.io/neon-dash/`. GitHub displays the exact URL in Pages settings.
 
 All asset paths are relative, so both project Pages and user Pages work. `.nojekyll` tells GitHub to serve these files directly. No GitHub Actions workflow is needed.
+
+### This deployment’s custom domain
+
+The live deployment uses `nd.sarvesh.si`, recorded in `CNAME`. At the DNS provider for `sarvesh.si`, set a **CNAME** record named **nd** with target **sarvesh-kr.github.io** (no protocol or repository path). After DNS resolves and GitHub provisions the certificate, enable **Enforce HTTPS** in the repository’s Pages settings.
+
+When reusing this project for a different repository or domain, remove or replace `CNAME` and update the play link above.
 
 If you prefer Git:
 
