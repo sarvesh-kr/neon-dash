@@ -83,6 +83,7 @@ Home Screen launches automatically fill the app window. The manifest requests fu
 - Best score, runner color, and sound preference saved in this browser’s local storage.
 - Three runner colors, an original looping synthesized soundtrack, and louder sound effects. Sound defaults to enabled, starts after the first user gesture, and respects a saved mute preference. Music stops while paused, after a crash, or when the page is hidden.
 - Responsive layout, immediate swipe gestures without on-screen navigation arrows, keyboard controls, and instructions.
+- The play surface suppresses text selection, image dragging, and long-press context menus. Holding still makes no move; each swipe triggers one action. Interrupted gestures reset when paused or restarted.
 - Direct expanded game launch, native fullscreen from Play, and Home Screen app support.
 - Fixed 120 Hz simulation with interpolated character movement, consistent fast lane changes, a short landing jump buffer, and an airborne downward swipe that lands into a slide.
 - Cached scenery, gradients, and collectible sprites; batched track drawing; object sorting only on spawn; reduced distant detail; a bounded canvas resolution; and a 64-particle pool. Drawing stops when paused or hidden.

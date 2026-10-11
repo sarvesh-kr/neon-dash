@@ -2,6 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const canvas = $('game'), ctx = canvas.getContext('2d', { alpha: false });
+  const gameFrame = canvas.closest('.game-frame');
   const game = new RunnerEngine();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const districts = [
@@ -83,6 +84,7 @@
     if (!distanceGoal && game.distance >= 1000) { distanceGoal = true; showToast('✦ Go the distance — goal complete!'); sound('goal'); }
   }
   function startRun() {
+    touchStart = null;
     void NeonFullscreen.enterNative(); NeonAudio.unlock(); NeonAudio.setPlaying(true);
     accumulator = 0; lastTime = 0; endDelay = 0; finishShown = false; impact = 0;
     NeonEffects.reset(); particleCount = 0; dustDistance = 0;
@@ -97,6 +99,7 @@
     setModesEnabled(false); sound('start'); updateHUD(); canvas.focus({ preventScroll: true });
   }
   function finishRun() {
+    touchStart = null;
     finishShown = true;
     NeonAudio.setPlaying(false);
     const record = game.score > best;
@@ -113,6 +116,7 @@
     setModesEnabled(true); $('play-button').focus({ preventScroll: true });
   }
   function togglePause() {
+    touchStart = null;
     if (game.state === 'running') {
       NeonAudio.setPlaying(false); accumulator = 0;
       game.pause(); $('overlay').className = 'overlay paused'; $('overlay-title').innerHTML = 'TAKE A<br><span>BREATHER.</span>';
@@ -165,8 +169,17 @@
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden && game.state === 'running') togglePause(); });
   window.addEventListener('blur', () => { if (game.state === 'running') togglePause(); });
+  // The play surface is an input control, including its HUD and overlays.
+  // Keep native selection, image dragging, and long-press menus out of it.
+  for (const type of ['contextmenu', 'selectstart', 'dragstart']) {
+    gameFrame.addEventListener(type, event => event.preventDefault());
+  }
+  // WebKit can show a touch callout independently of pointer defaults.
+  // Cancel canvas touch defaults without cancelling toolbar button taps.
+  canvas.addEventListener('touchstart', event => event.preventDefault(), { passive: false });
   canvas.addEventListener('pointerdown', event => {
-    if (!event.isPrimary || game.state !== 'running') return;
+    if (!event.isPrimary || event.button !== 0 || game.state !== 'running') return;
+    event.preventDefault();
     touchStart = { x: event.clientX, y: event.clientY, id: event.pointerId };
     canvas.setPointerCapture(event.pointerId);
   });
@@ -179,9 +192,15 @@
     action(Math.abs(dx) > Math.abs(dy) ? dx > 0 ? 'right' : 'left' : dy < 0 ? 'jump' : 'slide');
   }
   canvas.addEventListener('pointermove', swipe, { passive: true });
-  canvas.addEventListener('pointerup', event => { swipe(event); touchStart = null; });
-  canvas.addEventListener('pointercancel', () => { touchStart = null; });
-  canvas.addEventListener('lostpointercapture', () => { touchStart = null; });
+  canvas.addEventListener('pointerup', event => {
+    if (event.pointerId !== touchStart?.id) return;
+    swipe(event); touchStart = null;
+  });
+  function cancelSwipe(event) {
+    if (event.pointerId === touchStart?.id) touchStart = null;
+  }
+  canvas.addEventListener('pointercancel', cancelSwipe);
+  canvas.addEventListener('lostpointercapture', cancelSwipe);
 
   // Perspective projection and original procedural scenery.
   function project(x, z, elevation = 0) {
