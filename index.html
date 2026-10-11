@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10101b">
+  <meta name="description" content="Hit the neon streets. A free browser endless runner with trains, coins, and one more run.">
+  <title>Neon Dash — Keep moving.</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./engine.js" defer></script>
+  <script src="./game.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Neon Dash home"><span class="brand-icon">ϟ</span> NEON<span>DASH</span><span class="beta">ARCADE</span></a>
+      <nav aria-label="Game options"><button class="text-button" id="help-button"><span>ⓘ</span> How to play</button><span class="nav-divider"></span><button class="icon-button" id="sound-button" aria-label="Turn sound on" aria-pressed="false" title="Sound">♪<span class="sound-off">/</span></button></nav>
+    </header>
+
+    <main>
+      <div class="intro"><div><p class="eyebrow"><span></span> THE CITY NEVER STOPS. NEITHER DO YOU.</p><h1>One more <em>run.</em></h1><p class="intro-copy">Dodge the rush. Chase the glow. Beat your best.</p></div><div class="personal-best"><span class="trophy">♜</span><div><span class="label">PERSONAL BEST</span><strong id="header-best">0</strong><span class="best-sub">Your next record is waiting.</span></div></div></div>
+
+      <div class="game-layout">
+        <section class="game-frame" aria-label="Neon Dash game">
+          <canvas id="game" tabindex="0" aria-label="Endless runner. Use left and right arrows to switch lanes, up to jump, down to slide. Press P to pause."></canvas>
+          <div class="game-top"><span class="district"><span></span> MIDNIGHT DISTRICT <small>01</small></span><button class="icon-button pause-button" id="pause-button" aria-label="Pause game" disabled>Ⅱ</button></div>
+          <div class="hud" id="hud" hidden><div><span>DISTANCE</span><strong id="distance">0<span> m</span></strong></div><div class="coin-stat"><span>COINS</span><strong><i>◆</i> <b id="coins">0</b></strong></div></div>
+          <div class="overlay" id="overlay">
+            <div class="title-badge">NO FINISH LINE. JUST YOU.</div>
+            <h2 id="overlay-title">OWN THE<br><span>NIGHT.</span></h2>
+            <p id="overlay-copy">Three lanes. Endless possibilities.</p>
+            <div class="run-results" id="run-results" hidden><div><span>DISTANCE</span><strong id="result-distance">0 m</strong></div><div><span>COINS</span><strong id="result-coins">0</strong></div><div><span>SCORE</span><strong id="result-score">0</strong></div></div>
+            <button class="play-button" id="play-button"><span class="play-triangle">▶</span><span id="play-label">LET’S RUN</span><span class="button-arrow">↗</span></button>
+            <span class="start-hint" id="start-hint">or press <kbd>SPACE</kbd> to start</span>
+          </div>
+          <div class="live-toast" id="toast" aria-live="polite"></div>
+          <div class="game-bottom"><span><i></i> <span id="game-status">READY WHEN YOU ARE</span></span><span id="speed-label">YOUR PACE. YOUR PLAY.</span></div>
+          <div class="touch-controls" id="touch-controls"><button data-action="left" aria-label="Move left">←</button><button data-action="jump" aria-label="Jump">↑</button><button data-action="slide" aria-label="Slide">↓</button><button data-action="right" aria-label="Move right">→</button></div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel mode-panel"><div class="panel-heading"><h2>Pick your pace</h2><span>01 — 03</span></div><p class="panel-copy">Find your flow. Then push it.</p><div class="mode-options" role="group" aria-label="Difficulty">
+            <button class="mode" data-mode="chill" aria-pressed="false"><span class="mode-symbol">≈</span><span><strong>Chill</strong><small>Room to breathe</small></span><span class="mode-dot"></span></button>
+            <button class="mode selected" data-mode="classic" aria-pressed="true"><span class="mode-symbol">ϟ</span><span><strong>Classic</strong><small>The original rush</small></span><span class="mode-dot"></span></button>
+            <button class="mode" data-mode="rush" aria-pressed="false"><span class="mode-symbol">»</span><span><strong>Rush</strong><small>All gas. No brakes.</small></span><span class="mode-dot"></span></button>
+          </div></section>
+          <section class="panel mission-panel"><div class="panel-heading"><h2>Run goals</h2><span class="tiny-tag">THIS RUN</span></div><div class="mission"><div class="mission-icon">◆</div><div><strong>Follow the gold</strong><span>Collect 25 coins <b id="coin-progress">0 / 25</b></span><div class="progress-track"><i id="coin-bar"></i></div></div></div><div class="mission"><div class="mission-icon">↗</div><div><strong>Go the distance</strong><span>Run 1,000 meters <b id="distance-progress">0 / 1,000</b></span><div class="progress-track"><i id="distance-bar"></i></div></div></div></section>
+          <section class="runner-card"><div class="runner-avatar" aria-hidden="true"><div class="avatar-head"></div><div class="avatar-body"></div><div class="avatar-leg left"></div><div class="avatar-leg right"></div></div><div class="runner-info"><span class="label">YOUR RUNNER</span><strong id="runner-name">The Night Shift</strong><button id="style-button">Change color <span>↗</span></button></div><span class="runner-number">01</span></section>
+          <div class="side-note"><span>✦</span><p>No downloads. No limits.<br>Just a little <strong>main character energy.</strong></p></div>
+        </aside>
+      </div>
+
+      <div class="control-strip"><div><span class="control-label">MAKE YOUR MOVE</span><span class="control-group"><kbd>←</kbd><kbd>→</kbd> Switch lanes</span><span class="control-group"><kbd>↑</kbd><kbd>SPACE</kbd> Jump</span><span class="control-group"><kbd>↓</kbd> Slide</span><span class="control-group"><kbd>P</kbd> Pause</span></div><span class="swipe-hint">↔ Swipe to play on mobile</span></div>
+    </main>
+    <footer><span>BUILT FOR THE <b>ONE-MORE-TRY</b> CROWD.</span><span>STAY QUICK. STAY CURIOUS. <i>↗</i></span></footer>
+  </div>
+
+  <dialog id="help-dialog"><button class="dialog-close" aria-label="Close instructions">×</button><p class="eyebrow">WELCOME TO THE NIGHT SHIFT</p><h2>The streets are yours.</h2><p>Run as far as you can. Collect gold coins and keep clear of the midnight traffic.</p><div class="help-row"><kbd>← →</kbd><span><strong>Switch lanes</strong>Move around trains and obstacles.</span></div><div class="help-row"><kbd>↑ / SPACE</kbd><span><strong>Jump</strong>Clear the low striped barriers.</span></div><div class="help-row"><kbd>↓</kbd><span><strong>Slide</strong>Duck under glowing overhead gates.</span></div><div class="help-row"><kbd>P / ESC</kbd><span><strong>Pause</strong>Take a breath. The city can wait.</span></div><p class="dialog-note">On a phone, swipe in any direction or use the arrow buttons. Your best score saves on this device. Score = distance + 20 per coin.</p><button class="play-button dialog-done">GOT IT <span>↗</span></button></dialog>
+  <dialog id="style-dialog"><button class="dialog-close" aria-label="Close runner colors">×</button><p class="eyebrow">A LITTLE SELF EXPRESSION</p><h2>Find your glow.</h2><p>Same moves. Your colors.</p><div class="color-options"><button data-color="mint" class="color-option selected" aria-pressed="true"><span style="--swatch:#72f3cb"></span>Night Shift</button><button data-color="pink" class="color-option" aria-pressed="false"><span style="--swatch:#ff7baf"></span>Pink Noise</button><button data-color="blue" class="color-option" aria-pressed="false"><span style="--swatch:#88acff"></span>Blue Hour</button></div></dialog>
+</body>
+</html>
