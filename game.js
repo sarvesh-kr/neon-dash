@@ -3,6 +3,15 @@
   const $ = id => document.getElementById(id);
   const canvas = $('game'), ctx = canvas.getContext('2d', { alpha: false });
   const game = new RunnerEngine();
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const districts = [
+    { name: 'MIDNIGHT DISTRICT', sky: ['#14192d', '#3d2847', '#6b3e5e', '#111b2b'], glow: '#c681753c', rail: '#af66b58c', sign: '#ffaae4', floor: '#293046', fog: '#77517075' },
+    { name: 'VIOLET MARKET', sky: ['#1a1531', '#392d66', '#6b4384', '#191b35'], glow: '#b080e53c', rail: '#aa88ef99', sign: '#a7adff', floor: '#332d4a', fog: '#76569075' },
+    { name: 'HARBOR RUN', sky: ['#0b1d2c', '#1c4755', '#42797c', '#102532'], glow: '#75c6c33c', rail: '#68d0c899', sign: '#97ffe8', floor: '#243e48', fog: '#56868475' }
+  ];
+  let districtIndex = 0, currentDistrict = districts[0], cachedDpr = 1;
+  let previousPose = { lane: 1, jump: 0 }, viewLane = 1, viewJump = 0;
+  let impact = 0, endDelay = 0, finishShown = true, particleCount = 0, dustDistance = 0;
   let width = 900, height = 530, lastTime = 0, ambient = 0, selectedMode = 'classic';
   let soundEnabled = true, best = 0, runnerColor = 'mint', toastTimer;
   let coinGoal = false, distanceGoal = false, touchStart = null;
@@ -18,7 +27,7 @@
   function save(key, value) { try { localStorage.setItem(key, String(value)); } catch (_) {} }
   const sound = type => NeonAudio.effect(type);
   const isTouch = () => navigator.maxTouchPoints > 0;
-  const nodes = Object.fromEntries(['distance-value', 'coins', 'coin-progress', 'distance-progress', 'coin-bar', 'distance-bar', 'speed-label'].map(id => [id, $(id)]));
+  const nodes = Object.fromEntries(['distance-value', 'coins', 'coin-progress', 'distance-progress', 'coin-bar', 'distance-bar', 'speed-label', 'magnet-label', 'shield-label'].map(id => [id, $(id)]));
   const hudValues = {};
   function text(id, value) { if (hudValues[id] !== value) { nodes[id].textContent = value; hudValues[id] = value; } }
   function setColor(color) {
@@ -39,6 +48,23 @@
     $('toast').textContent = message; $('toast').classList.add('show');
     clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2400);
   }
+  function setDistrict(index, announce = false) {
+    const next = index % districts.length, changed = next !== districtIndex;
+    districtIndex = next; currentDistrict = districts[next];
+    $('district-name').textContent = currentDistrict.name;
+    $('district-number').textContent = String(Math.floor(game.distance / 750) + 1).padStart(2, '0');
+    if (changed) { cacheScenery(cachedDpr); if (announce) showToast(`NOW ENTERING · ${currentDistrict.name}`); }
+  }
+  function feedback(effect) {
+    const point = project((effect.lane ?? game.visualLane) - 1, effect.z ?? 8.5, effect.type === 'coin' ? 0.7 : 0);
+    const target = project(game.visualLane - 1, 8.5, 0.7);
+    const colors = { coin: '#ffd67b', land: '#b4ced9', shield: '#a7f7cf', 'shield-break': '#a7f7cf', magnet: '#88caff', dodge: '#b7ffe1', crash: '#ffb19b' };
+    if (!reducedMotion) NeonEffects.emit(effect.type, point.x, point.y, colors[effect.type] || '#ffffff', effect.type === 'coin' && game.magnetTime > 0 ? target : null);
+    if (effect.type === 'crash') { impact = 0.3; endDelay = 0.3; NeonAudio.setPlaying(false); $('pause-button').disabled = true; }
+    if (effect.type === 'shield-break') { impact = 0.15; showToast('SHIELD SAVED YOUR RUN'); sound('goal'); }
+    if (effect.type === 'shield') { showToast('SHIELD · ONE HIT PROTECTED'); sound('goal'); }
+    if (effect.type === 'magnet') { showToast('MAGNET · COINS COME TO YOU'); sound('goal'); }
+  }
   function setModesEnabled(enabled) { document.querySelectorAll('[data-mode]').forEach(button => { button.disabled = !enabled; }); }
   function updateHUD() {
     text('distance-value', format(game.distance)); text('coins', format(game.coins));
@@ -47,13 +73,23 @@
     nodes['coin-bar'].style.transform = `scaleX(${Math.min(1, game.coins / 25)})`;
     nodes['distance-bar'].style.transform = `scaleX(${Math.min(1, game.distance / 1000)})`;
     text('speed-label', `${selectedMode.toUpperCase()} · ${Math.round(game.speed * 3.6)} KM/H`);
+    $('magnet-status').hidden = game.magnetTime <= 0;
+    $('shield-status').hidden = game.shieldTime <= 0;
+    text('magnet-label', `MAGNET ${Math.ceil(game.magnetTime)}s`);
+    text('shield-label', `SHIELD ${Math.ceil(game.shieldTime)}s`);
+    $('magnet-meter').style.transform = `scaleX(${game.magnetTime / 10})`;
+    $('shield-meter').style.transform = `scaleX(${game.shieldTime / 12})`;
     if (!coinGoal && game.coins >= 25) { coinGoal = true; showToast('✦ Follow the gold — goal complete!'); sound('goal'); }
     if (!distanceGoal && game.distance >= 1000) { distanceGoal = true; showToast('✦ Go the distance — goal complete!'); sound('goal'); }
   }
   function startRun() {
     void NeonFullscreen.enterNative(); NeonAudio.unlock(); NeonAudio.setPlaying(true);
-    accumulator = 0; lastTime = 0;
+    accumulator = 0; lastTime = 0; endDelay = 0; finishShown = false; impact = 0;
+    NeonEffects.reset(); particleCount = 0; dustDistance = 0;
     game.start(selectedMode); coinGoal = false; distanceGoal = false;
+    previousPose = { lane: 1, jump: 0 }; viewLane = 1; viewJump = 0;
+    $('boost-guide').hidden = true;
+    setDistrict(0);
     $('overlay').className = 'overlay hidden'; $('hud').hidden = false; $('pause-button').disabled = false;
     $('pause-button').textContent = 'Ⅱ'; $('pause-button').setAttribute('aria-label', 'Pause game');
     $('game-status').textContent = 'KEEP MOVING';
@@ -61,14 +97,17 @@
     setModesEnabled(false); sound('start'); updateHUD(); canvas.focus({ preventScroll: true });
   }
   function finishRun() {
+    finishShown = true;
     NeonAudio.setPlaying(false);
     const record = game.score > best;
     if (record) { best = game.score; save('neon-dash-best', best); $('header-best').textContent = format(best); }
     $('overlay').className = 'overlay finished'; $('overlay-title').innerHTML = record ? 'NEW<br><span>RECORD.</span>' : 'WHAT A<br><span>RUN.</span>';
-    $('overlay-copy').textContent = record ? 'A new personal best. The night is yours.' : 'Shake it off. There’s always one more run.';
+    const tips = { train: 'Switch lanes to dodge trains. Jumping won’t clear them.', barrier: 'Swipe up a little earlier to clear the striped barrier.', crate: 'Jump the cargo crates, or switch to an open lane.', gate: 'Swipe down to slide beneath the glowing gate.' };
+    $('overlay-copy').textContent = tips[game.crashReason] || (record ? 'A new personal best. The night is yours.' : 'Shake it off. There’s always one more run.');
     $('overlay').querySelector('.title-badge').textContent = record ? 'YOU JUST RAISED THE BAR' : 'THE CITY WILL BE WAITING';
     $('run-results').hidden = false; $('result-distance').textContent = `${format(game.distance)} m`;
     $('result-coins').textContent = format(game.coins); $('result-score').textContent = format(game.score);
+    $('result-clears').textContent = format(game.dodges);
     $('play-label').textContent = 'RUN IT BACK'; $('start-hint').textContent = isTouch() ? 'Swipe to move · up to jump · down to slide' : 'or press SPACE to try again';
     $('pause-button').disabled = true; $('game-status').textContent = 'ONE MORE TRY?';
     setModesEnabled(true); $('play-button').focus({ preventScroll: true });
@@ -90,7 +129,13 @@
       $('game-status').textContent = 'KEEP MOVING'; canvas.focus({ preventScroll: true });
     }
   }
-  function action(type) { if (game.action(type) && (type === 'jump' || type === 'slide')) sound(type); }
+  function action(type) {
+    if (!game.action(type)) return;
+    if (type === 'jump' || type === 'slide') sound(type);
+    if (!reducedMotion && (type === 'left' || type === 'right' || type === 'slide')) {
+      const point = project(game.visualLane - 1, 8.5); NeonEffects.emit('land', point.x, point.y, '#afc7da');
+    }
+  }
   $('play-button').addEventListener('click', () => game.state === 'paused' ? togglePause() : startRun());
   $('pause-button').addEventListener('click', togglePause);
   $('sound-button').addEventListener('click', () => { soundEnabled = !soundEnabled; save('neon-dash-sound', soundEnabled); NeonAudio.setEnabled(soundEnabled); updateSoundButton(); if (soundEnabled) NeonAudio.unlock(); });
@@ -159,10 +204,10 @@
     const ctx = backdrop.getContext('2d', { alpha: false });
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const sky = ctx.createLinearGradient(0, 0, 0, height);
-    sky.addColorStop(0, '#14192d'); sky.addColorStop(0.28, '#3d2847'); sky.addColorStop(0.45, '#6b3e5e'); sky.addColorStop(1, '#111b2b');
+    sky.addColorStop(0, currentDistrict.sky[0]); sky.addColorStop(0.28, currentDistrict.sky[1]); sky.addColorStop(0.45, currentDistrict.sky[2]); sky.addColorStop(1, currentDistrict.sky[3]);
     ctx.fillStyle = sky; ctx.fillRect(0, 0, width, height);
     const glow = ctx.createRadialGradient(width * 0.51, height * 0.31, 0, width * 0.51, height * 0.31, width * 0.47);
-    glow.addColorStop(0, '#c681753c'); glow.addColorStop(1, '#b9767300'); ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height);
+    glow.addColorStop(0, currentDistrict.glow); glow.addColorStop(1, '#b9767300'); ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height);
     for (const star of stars) { ctx.fillStyle = `rgba(213,210,239,${star.alpha})`; ctx.fillRect(star.x * width, star.y * height, 1, 1); }
     ctx.fillStyle = '#dcc0c17a'; ctx.beginPath(); ctx.arc(width * 0.73, height * 0.17, 15, 0, Math.PI * 2); ctx.fill();
     for (const building of skyline) {
@@ -173,9 +218,9 @@
       if (building.h > 0.16) { ctx.strokeStyle = '#5a4264'; ctx.beginPath(); ctx.moveTo(x + bw / 2, y); ctx.lineTo(x + bw / 2, y - 10); ctx.stroke(); }
     }
     floorGradient = ctx.createLinearGradient(0, height * 0.35, 0, height);
-    floorGradient.addColorStop(0, '#293046'); floorGradient.addColorStop(1, '#141d2e');
+    floorGradient.addColorStop(0, currentDistrict.floor); floorGradient.addColorStop(1, '#141d2e');
     fogGradient = ctx.createLinearGradient(0, height * 0.32, 0, height * 0.6);
-    fogGradient.addColorStop(0, '#77517075'); fogGradient.addColorStop(1, '#77517000');
+    fogGradient.addColorStop(0, currentDistrict.fog); fogGradient.addColorStop(1, '#77517000');
     vignetteGradient = ctx.createRadialGradient(width / 2, height * 0.5, width * 0.1, width / 2, height * 0.5, width * 0.68);
     vignetteGradient.addColorStop(0, '#090d1700'); vignetteGradient.addColorStop(1, '#090d1755');
   }
@@ -184,16 +229,21 @@
     polygon([project(-1.67, 280), project(1.67, 280), project(1.67, -3), project(-1.67, -3)], floorGradient);
     polygon([project(-3.5, 280), project(-1.67, 280), project(-1.67, -3), project(-3.5, -3)], '#242033');
     polygon([project(1.67, 280), project(3.5, 280), project(3.5, -3), project(1.67, -3)], '#242033');
-    line(project(-1.66, 280), project(-1.66, -3), '#af66b58c', 2); line(project(1.66, 280), project(1.66, -3), '#af66b58c', 2);
+    line(project(-1.66, 280), project(-1.66, -3), currentDistrict.rail, 2); line(project(1.66, 280), project(1.66, -3), currentDistrict.rail, 2);
     for (const lane of [-1, 0, 1]) {
       for (const rail of [-0.3, 0.3]) { line(project(lane + rail, 280), project(lane + rail, -3), '#677b91', 1.5); line(project(lane + rail + 0.022, 280), project(lane + rail + 0.022, -3), '#172133', 2); }
     }
     const travel = game.state === 'ready' ? ambient * 7 : game.distance;
-    for (let z = 0; z < 270; z += 6) {
-      const shifted = z - travel % 6;
-      if (shifted < -2) continue;
-      const p = project(0, shifted);
-      for (const lane of [-1, 0, 1]) line(project(lane - 0.38, shifted), project(lane + 0.38, shifted), '#4e435663', Math.max(1, 4 * p.scale));
+    for (let band = 0; band < 2; band++) {
+      ctx.beginPath(); ctx.strokeStyle = '#4e435663'; ctx.lineWidth = band ? 1 : 2.5;
+      for (let z = band ? 60 : 0; z < (band ? 270 : 60); z += 6) {
+        const shifted = z - travel % 6; if (shifted < -2) continue;
+        for (const lane of [-1, 0, 1]) {
+          const a = project(lane - 0.38, shifted), b = project(lane + 0.38, shifted);
+          ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        }
+      }
+      ctx.stroke();
     }
     for (const side of [-1, 1]) {
       for (let i = 7; i >= 0; i--) {
@@ -207,7 +257,7 @@
         const bottom = project(side * 1.88, z), top = project(side * 1.88, z, 2.8);
         line(bottom, top, '#6a526e', Math.max(1, bottom.scale * 4));
         const end = project(side * 1.56, z, 2.8); line(top, end, '#8b6894', Math.max(1, bottom.scale * 3));
-        ctx.shadowBlur = 15 * bottom.scale; ctx.shadowColor = '#ff9ddd'; line(end, project(side * 1.4, z, 2.8), '#ffc2ed', Math.max(1, bottom.scale * 5)); ctx.shadowBlur = 0;
+        ctx.shadowBlur = 15 * bottom.scale; ctx.shadowColor = '#ff9ddd'; line(end, project(side * 1.4, z, 2.8), currentDistrict.sign, Math.max(1, bottom.scale * 5)); ctx.shadowBlur = 0;
       }
     }
     ctx.fillStyle = fogGradient; ctx.fillRect(0, height * 0.32, width, height * 0.3);
@@ -218,7 +268,7 @@
     const back = project(inner, z + 29, tall), backBottom = project(inner, z + 29);
     polygon([a, d, back, backBottom], index % 2 ? '#28263b' : '#22283c', '#494057');
     polygon([a, b, c, d], '#201f33', '#43354c');
-    if (a.scale < 0.13) return; // Distant windows and signs occupy subpixel areas.
+    if (a.scale < 0.16) return; // Distant windows and signs occupy subpixel areas.
     for (let floor = 0.6; floor < tall - 0.2; floor += 0.55) {
       for (let room = 0; room < 3; room++) {
         const start = z + 3 + room * 8, color = (floor * 10 + room + index) % 3 > 1 ? '#d9a8889c' : '#9d75b473';
@@ -228,7 +278,7 @@
     if (index % 2 === 0) {
       const a = project(inner, z + 5, 1.4), b = project(inner, z + 16, 1.4), c = project(inner, z + 16, 2.2), d = project(inner, z + 5, 2.2);
       polygon([a, b, c, d], '#863b7960', '#e386c980');
-      ctx.shadowColor = '#ef92da'; ctx.shadowBlur = a.scale * 13; line(project(inner, z + 7, 1.7), project(inner, z + 14, 1.7), '#ffaae4', Math.max(1, a.scale * 3)); ctx.shadowBlur = 0;
+      ctx.shadowColor = '#ef92da'; ctx.shadowBlur = a.scale * 13; line(project(inner, z + 7, 1.7), project(inner, z + 14, 1.7), currentDistrict.sign, Math.max(1, a.scale * 3)); ctx.shadowBlur = 0;
     }
   }
   function box(x, z, halfWidth, length, tall, colors, drawFront = true) {
@@ -242,12 +292,11 @@
   function drawObject(object) {
     if (object.collected || (object.type === 'train' ? object.z + 17 < -3 : object.z < -3) || object.z > 280) return;
     const x = object.lane - 1, z = object.z, p = project(x, z);
-    if (object.type === 'coin') {
-      const c = project(x, z, 0.7), radius = Math.max(1.5, height * 0.021 * c.scale);
-      ctx.shadowColor = '#ffd678'; ctx.shadowBlur = 12 * c.scale;
-      ctx.fillStyle = '#ffcc67'; ctx.beginPath(); ctx.ellipse(c.x, c.y, radius * (0.65 + Math.sin(ambient * 3 + z) * 0.15), radius, 0, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
-      ctx.strokeStyle = '#ffeeb8'; ctx.lineWidth = Math.max(0.7, c.scale * 1.7); ctx.stroke();
-      ctx.fillStyle = '#b87728'; ctx.font = `bold ${Math.max(3, radius * 1.3)}px Arial`; ctx.textAlign = 'center'; ctx.fillText('ϟ', c.x, c.y + radius * 0.45);
+    if (object.type === 'coin' || object.type === 'magnet' || object.type === 'shield') {
+      const boost = object.type !== 'coin';
+      const c = project(x, z, boost ? 0.95 + Math.sin(ambient * 3 + z) * 0.07 : 0.7);
+      const radius = Math.max(1.5, height * (boost ? 0.033 : 0.021) * c.scale);
+      NeonItems.draw(ctx, object.type, c.x, c.y, radius, Math.abs(ambient * 8 + z));
     } else if (object.type === 'train') {
       const visibleFront = Math.max(-3, z), visibleLength = z + 17 - visibleFront;
       box(x, visibleFront, 0.43, visibleLength, 2.25, ['#446980', '#254257', '#718395'], z >= -3);
@@ -267,6 +316,11 @@
     } else if (object.type === 'barrier') {
       box(x, z, 0.45, 1, 0.78, ['#db9b95', '#9e626e', '#f2bbab']);
       for (let i = 0; i < 5; i++) { const offset = -0.4 + i * 0.18; polygon([project(x + offset, z - 0.03, 0.06), project(x + offset + 0.1, z - 0.03, 0.06), project(x + offset + 0.22, z - 0.03, 0.72), project(x + offset + 0.12, z - 0.03, 0.72)], '#492e43'); }
+    } else if (object.type === 'crate') {
+      box(x, z, 0.42, 2.1, 0.96, ['#b98c53', '#715d49', '#d2ae78']);
+      for (const offset of [-0.28, 0.28]) line(project(x + offset, z - 0.05, 0.05), project(x + offset, z - 0.05, 0.94), '#f2d594', Math.max(1, p.scale * 4));
+      line(project(x - 0.34, z - 0.06, 0.18), project(x + 0.34, z - 0.06, 0.80), '#6a4c37', Math.max(1, p.scale * 4));
+      line(project(x + 0.34, z - 0.06, 0.18), project(x - 0.34, z - 0.06, 0.80), '#6a4c37', Math.max(1, p.scale * 4));
     } else if (object.type === 'gate') {
       for (const offset of [-0.43, 0.43]) box(x + offset, z, 0.045, 1.2, 2.1, ['#887ca8', '#4a4463', '#aba1c6']);
       polygon([project(x - 0.47, z, 1.25), project(x + 0.47, z, 1.25), project(x + 0.47, z, 2.08), project(x - 0.47, z, 2.08)], '#ab638c', '#ffadd2');
@@ -275,34 +329,25 @@
     }
   }
   function runner() {
-    const portraitFullscreen = document.body.classList.contains('game-view-expanded') && width < height;
-    const p = project(game.visualLane - 1, 8.5), scale = Math.min(width / (portraitFullscreen ? 420 : 900), height / 530) * 0.95;
-    const jumping = game.jumpHeight * height * 0.083, sliding = game.slideTime > 0;
-    const active = game.state === 'running', cycle = active ? game.distance * 0.65 : ambient * 4;
-    const stride = active && !game.jumpTime && !sliding ? Math.sin(cycle) : 0.1;
-    ctx.fillStyle = '#070d1a80'; ctx.beginPath(); ctx.ellipse(p.x, p.y + 4, 31 * scale * (1 - game.jumpHeight * 0.13), 9 * scale, 0, 0, Math.PI * 2); ctx.fill();
+    const portrait = document.body.classList.contains('game-view-expanded') && width < height;
+    const p = project(viewLane - 1, 8.5), scale = Math.min(width / (portrait ? 420 : 900), height / 530) * 0.95;
+    const jumping = viewJump * height * 0.083;
+    ctx.fillStyle = '#070d1a65'; ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 4, 30 * scale * (1 - viewJump * 0.16), 8 * scale, 0, 0, Math.PI * 2); ctx.fill();
     ctx.save(); ctx.translate(p.x, p.y - jumping); ctx.scale(scale, scale);
-    if (sliding) { ctx.translate(0, -10); ctx.rotate(-0.8); ctx.scale(1, 0.65); }
-    const lean = (game.lane - game.visualLane) * 0.17; ctx.rotate(lean);
-    // Legs and luminous sneakers.
-    for (const side of [-1, 1]) {
-      const swing = stride * side * 10; ctx.strokeStyle = '#333448'; ctx.lineWidth = 12; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(side * 8, -40); ctx.lineTo(side * 11 + swing * 0.25, -21); ctx.lineTo(side * 13 + swing * 0.4, -6 - Math.max(0, swing)); ctx.stroke();
-      ctx.strokeStyle = '#e6e4f0'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(side * 13 + swing * 0.4 - 3, -5 - Math.max(0, swing)); ctx.lineTo(side * 13 + swing * 0.4 + 6, -4 - Math.max(0, swing)); ctx.stroke();
-      ctx.strokeStyle = palettes[runnerColor].color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(side * 13 - 4 + swing * 0.4, -1 - Math.max(0, swing)); ctx.lineTo(side * 13 + 9 + swing * 0.4, -1 - Math.max(0, swing)); ctx.stroke();
-    }
-    // Arms move in opposition to the stride.
-    ctx.strokeStyle = palettes[runnerColor].color; ctx.lineWidth = 10;
-    for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * 15, -76); ctx.lineTo(side * 24, -59 - stride * side * 6); ctx.lineTo(side * 21, -43 - stride * side * 10); ctx.stroke(); }
-    ctx.fillStyle = palettes[runnerColor].color; ctx.beginPath(); ctx.roundRect(-18, -86, 36, 49, [12, 12, 5, 5]); ctx.fill();
-    ctx.fillStyle = '#203b4045'; ctx.fillRect(6, -80, 10, 41); ctx.strokeStyle = '#d7fff970'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-14, -47); ctx.lineTo(14, -47); ctx.stroke();
-    ctx.fillStyle = '#253044'; ctx.beginPath(); ctx.roundRect(-10, -77, 20, 27, 6); ctx.fill(); ctx.strokeStyle = '#bed8de80'; ctx.lineWidth = 1; ctx.stroke();
-    ctx.fillStyle = '#96e8d8'; ctx.fillRect(-3, -68, 6, 2);
-    ctx.fillStyle = '#ba8a7a'; ctx.beginPath(); ctx.roundRect(-12, -107, 24, 24, 8); ctx.fill();
-    ctx.fillStyle = '#2a2336'; ctx.beginPath(); ctx.roundRect(-14, -115, 28, 21, [11, 11, 4, 4]); ctx.fill();
-    ctx.fillStyle = '#545067'; ctx.fillRect(-15, -98, 30, 5); ctx.restore();
+    const active = game.state === 'running';
+    NeonCharacter.draw(ctx, {
+      color: palettes[runnerColor].color, cycle: active ? game.distance * 0.48 : ambient * 2,
+      jump: viewJump, crouch: game.slidePose, landing: game.landing / 0.16,
+      lean: Math.max(-0.22, Math.min(0.22, game.laneVelocity * 0.018)) + (game.state === 'over' ? Math.max(0, 0.30 - endDelay) * 0.8 : 0),
+      active, shield: game.shieldTime > 0, magnet: game.magnetTime > 0, time: ambient
+    });
+    ctx.restore();
   }
   const demoObjects = [{ lane: 0, z: 68, type: 'train' }, { lane: 2, z: 105, type: 'train' }, { lane: 2, z: 38, type: 'barrier' }, ...Array.from({ length: 9 }, (_, i) => ({ lane: 1, z: 23 + i * 8, type: 'coin' }))].sort((a, b) => b.z - a.z);
   function render() {
+    ctx.save();
+    if (!reducedMotion && impact > 0) ctx.translate(Math.sin(ambient * 95) * impact * 10, Math.cos(ambient * 70) * impact * 6);
     background();
     const objects = game.state === 'ready' ? demoObjects : game.objects;
     let playerDrawn = false;
@@ -311,7 +356,9 @@
       drawObject(object);
     }
     if (!playerDrawn) runner();
+    NeonEffects.draw(ctx); ctx.restore();
     ctx.fillStyle = vignetteGradient; ctx.fillRect(0, 0, width, height);
+    if (impact > 0) { ctx.fillStyle = `rgba(255,210,190,${impact * 0.5})`; ctx.fillRect(0, 0, width, height); }
   }
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -322,7 +369,8 @@
     const pixelWidth = Math.round(width * dpr), pixelHeight = Math.round(height * dpr);
     if (canvas.width === pixelWidth && canvas.height === pixelHeight && backdrop.width === pixelWidth && backdrop.height === pixelHeight) return;
     canvas.width = pixelWidth; canvas.height = pixelHeight; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    cacheScenery(dpr);
+    NeonEffects.reset(); particleCount = 0; impact = 0;
+    cachedDpr = dpr; cacheScenery(dpr);
     render();
   }
   let hudElapsed = 0, accumulator = 0, lastDraw = 0, drawnState, animationId;
@@ -334,13 +382,28 @@
     if (game.state === 'running') {
       accumulator = Math.min(0.1, accumulator + dt);
       while (accumulator >= tick && game.state === 'running') {
+        previousPose.lane = game.visualLane; previousPose.jump = game.jumpHeight;
         game.update(tick); accumulator -= tick;
         for (const event of game.events) if (event === 'coin' || event === 'crash') sound(event);
+        for (const effect of game.effects) feedback(effect);
+      }
+      const alpha = Math.min(1, accumulator / tick);
+      viewLane = previousPose.lane + (game.visualLane - previousPose.lane) * alpha;
+      viewJump = previousPose.jump + (game.jumpHeight - previousPose.jump) * alpha;
+      if (Math.floor(game.distance / 750) % districts.length !== districtIndex) setDistrict(Math.floor(game.distance / 750), true);
+      if (!reducedMotion && game.distance - dustDistance > (game.slideTime > 0 ? 3 : 8)) {
+        dustDistance = game.distance;
+        if (!game.jumpTime) { const p = project(viewLane - 1, 8.5); NeonEffects.emit('land', p.x, p.y, '#9cb6ca'); }
       }
       hudElapsed += dt; if (hudElapsed >= 0.1 || game.state === 'over') { updateHUD(); hudElapsed = 0; }
-      if (game.state === 'over') finishRun();
     }
-    if (game.state === 'running' || drawnState !== game.state || (game.state === 'ready' && timestamp - lastDraw >= 1000 / 30)) {
+    let animationDirty = false;
+    if (game.state !== 'paused') {
+      animationDirty = particleCount > 0 || impact > 0;
+      particleCount = NeonEffects.step(dt); impact = Math.max(0, impact - dt);
+      if (game.state === 'over' && !finishShown) { endDelay = Math.max(0, endDelay - dt); if (!endDelay) finishRun(); }
+    }
+    if (game.state === 'running' || drawnState !== game.state || animationDirty || (game.state === 'over' && !finishShown) || (game.state === 'ready' && timestamp - lastDraw >= 1000 / 30)) {
       render(); lastDraw = timestamp; drawnState = game.state;
     }
     animationId = requestAnimationFrame(frame);

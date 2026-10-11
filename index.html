@@ -12,11 +12,14 @@
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css?v=gameplay-2">
-  <script src="./engine.js?v=gameplay-2" defer></script>
-  <script src="./audio.js?v=gameplay-2" defer></script>
-  <script src="./fullscreen.js?v=gameplay-2" defer></script>
-  <script src="./game.js?v=gameplay-2" defer></script>
+  <link rel="stylesheet" href="./styles.css?v=polish-3">
+  <script src="./engine.js?v=polish-3" defer></script>
+  <script src="./audio.js?v=polish-3" defer></script>
+  <script src="./fullscreen.js?v=polish-3" defer></script>
+  <script src="./character.js?v=polish-3" defer></script>
+  <script src="./items.js?v=polish-3" defer></script>
+  <script src="./effects.js?v=polish-3" defer></script>
+  <script src="./game.js?v=polish-3" defer></script>
 </head>
 <body class="game-view-expanded">
   <div class="app">
@@ -31,15 +34,17 @@
       <div class="game-layout">
         <section class="game-frame expanded" aria-label="Neon Dash game">
           <canvas id="game" tabindex="0" aria-label="Endless runner. Use left and right arrows to switch lanes, up to jump, down to slide. Press P to pause."></canvas>
-          <div class="game-top"><span class="district"><span></span> MIDNIGHT DISTRICT <small>01</small></span><div class="game-tools"><button class="icon-button" id="sound-button" aria-label="Turn sound off" aria-pressed="true" title="Music and sound">♪<span class="sound-off" hidden>/</span></button><button class="icon-button fullscreen-button" id="fullscreen-button" aria-label="Exit fullscreen" aria-pressed="true" title="Fullscreen (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="expand-icon" d="M9 4H4v5m11-5h5v5M4 15v5h5m6 0h5v-5"/><path class="collapse-icon" d="M4 9h5V4m6 0v5h5M9 20v-5H4m16 0h-5v5"/></svg></button><button class="icon-button pause-button" id="pause-button" aria-label="Pause game" disabled>Ⅱ</button></div></div>
+          <div class="game-top"><span class="district"><span></span> <b id="district-name">MIDNIGHT DISTRICT</b> <small id="district-number">01</small></span><div class="game-tools"><button class="icon-button" id="sound-button" aria-label="Turn sound off" aria-pressed="true" title="Music and sound">♪<span class="sound-off" hidden>/</span></button><button class="icon-button fullscreen-button" id="fullscreen-button" aria-label="Exit fullscreen" aria-pressed="true" title="Fullscreen (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="expand-icon" d="M9 4H4v5m11-5h5v5M4 15v5h5m6 0h5v-5"/><path class="collapse-icon" d="M4 9h5V4m6 0v5h5M9 20v-5H4m16 0h-5v5"/></svg></button><button class="icon-button pause-button" id="pause-button" aria-label="Pause game" disabled>Ⅱ</button></div></div>
           <div class="hud" id="hud" hidden><div><span>DISTANCE</span><strong id="distance"><b id="distance-value">0</b><span> m</span></strong></div><div class="coin-stat"><span>COINS</span><strong><i>◆</i> <b id="coins">0</b></strong></div></div>
+          <div class="boost-status" aria-label="Active power-ups"><span id="magnet-status" hidden><i class="boost-symbol">∩</i><b id="magnet-label">MAGNET</b><em id="magnet-meter"></em></span><span id="shield-status" hidden><i class="boost-symbol">◇</i><b id="shield-label">SHIELD</b><em id="shield-meter"></em></span></div>
           <div class="overlay" id="overlay">
             <div class="title-badge">NO FINISH LINE. JUST YOU.</div>
             <h2 id="overlay-title">OWN THE<br><span>NIGHT.</span></h2>
-            <p id="overlay-copy">Three lanes. Endless possibilities.</p>
-            <div class="run-results" id="run-results" hidden><div><span>DISTANCE</span><strong id="result-distance">0 m</strong></div><div><span>COINS</span><strong id="result-coins">0</strong></div><div><span>SCORE</span><strong id="result-score">0</strong></div></div>
+            <p id="overlay-copy">Dodge the rush. Find your flow. Grab a boost.</p>
+            <div class="run-results" id="run-results" hidden><div><span>DISTANCE</span><strong id="result-distance">0 m</strong></div><div><span>COINS</span><strong id="result-coins">0</strong></div><div><span>SCORE</span><strong id="result-score">0</strong></div><div><span>CLEARS</span><strong id="result-clears">0</strong></div></div>
             <button class="play-button" id="play-button"><span class="play-triangle">▶</span><span id="play-label">LET’S RUN</span><span class="button-arrow">↗</span></button>
             <span class="start-hint" id="start-hint">or press <kbd>SPACE</kbd> to start</span>
+            <div class="boost-guide" id="boost-guide"><span><i class="shield-dot"></i> Shield blocks a hit</span><span><i class="magnet-dot"></i> Magnet pulls coins</span></div>
           </div>
           <div class="live-toast" id="toast" aria-live="polite"></div>
           <div class="game-bottom"><span><i></i> <span id="game-status">READY WHEN YOU ARE</span></span><span id="speed-label">YOUR PACE. YOUR PLAY.</span></div>
@@ -63,7 +68,7 @@
     <footer><span>BUILT FOR THE <b>ONE-MORE-TRY</b> CROWD.</span><span>STAY QUICK. STAY CURIOUS. <i>↗</i></span></footer>
   </div>
 
-  <dialog id="help-dialog"><button class="dialog-close" aria-label="Close instructions">×</button><p class="eyebrow">WELCOME TO THE NIGHT SHIFT</p><h2>The streets are yours.</h2><p>Run as far as you can. Collect gold coins and keep clear of the midnight traffic.</p><div class="help-row"><kbd>← →</kbd><span><strong>Switch lanes</strong>Move around trains and obstacles.</span></div><div class="help-row"><kbd>↑ / SPACE</kbd><span><strong>Jump</strong>Clear the low striped barriers.</span></div><div class="help-row"><kbd>↓</kbd><span><strong>Slide</strong>Duck under glowing overhead gates.</span></div><div class="help-row"><kbd>P / ESC</kbd><span><strong>Pause</strong>Take a breath. The city can wait.</span></div><div class="help-row"><kbd>F</kbd><span><strong>Fullscreen</strong>Fill the screen. Tap the corners icon or press F to return.</span></div><p class="dialog-note">On a phone, swipe left or right to switch lanes, up to jump, and down to slide. Your best score saves on this device. Score = distance + 20 per coin.</p><button class="play-button dialog-done">GOT IT <span>↗</span></button></dialog>
+  <dialog id="help-dialog"><button class="dialog-close" aria-label="Close instructions">×</button><p class="eyebrow">WELCOME TO THE NIGHT SHIFT</p><h2>The streets are yours.</h2><p>Run as far as you can. Collect gold coins and keep clear of the midnight traffic.</p><div class="help-row"><kbd>← →</kbd><span><strong>Switch lanes</strong>Move around trains and obstacles.</span></div><div class="help-row"><kbd>↑ / SPACE</kbd><span><strong>Jump</strong>Clear striped barriers and cargo crates.</span></div><div class="help-row"><kbd>↓</kbd><span><strong>Slide</strong>Duck under glowing overhead gates.</span></div><div class="help-row"><kbd>P / ESC</kbd><span><strong>Pause</strong>Take a breath. The city can wait.</span></div><div class="help-row"><kbd>F</kbd><span><strong>Fullscreen</strong>Fill the screen. Tap the corners icon or press F to return.</span></div><p class="dialog-note">On a phone, swipe left or right to switch lanes, up to jump, and down to slide. Collect blue magnets to attract coins for 10 seconds. Mint shields protect against one hit for up to 12 seconds. Your best score saves on this device. Score = distance + 20 per coin.</p><button class="play-button dialog-done">GOT IT <span>↗</span></button></dialog>
   <dialog id="style-dialog"><button class="dialog-close" aria-label="Close runner colors">×</button><p class="eyebrow">A LITTLE SELF EXPRESSION</p><h2>Find your glow.</h2><p>Same moves. Your colors.</p><div class="color-options"><button data-color="mint" class="color-option selected" aria-pressed="true"><span style="--swatch:#72f3cb"></span>Night Shift</button><button data-color="pink" class="color-option" aria-pressed="false"><span style="--swatch:#ff7baf"></span>Pink Noise</button><button data-color="blue" class="color-option" aria-pressed="false"><span style="--swatch:#88acff"></span>Blue Hour</button></div></dialog>
   <dialog id="home-screen-dialog"><button class="dialog-close" aria-label="Close Home Screen instructions">×</button><p class="eyebrow">MORE GAME. LESS BROWSER.</p><h2>Your own arcade.</h2><p>Open Neon Dash from your Home Screen to play without browser tabs or the address bar. The game opens in the expanded view automatically.</p><h3>iPhone or iPad</h3><ol><li>Open this site in <strong>Safari</strong>.</li><li>Tap <strong>Share → Add to Home Screen</strong>. Keep <strong>Open as Web App</strong> on if shown, then tap <strong>Add</strong>.</li><li>Launch <strong>Neon Dash</strong> from its new Home Screen icon.</li></ol><h3>Android</h3><ol><li>Open this site in <strong>Chrome or Brave</strong>.</li><li>Open the browser menu and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li><li>Launch the new <strong>Neon Dash</strong> icon.</li></ol><p class="dialog-note">Device status and gesture indicators may remain visible. The corners button returns to the game settings. An internet connection is needed to load the game.</p></dialog>
 </body>

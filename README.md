@@ -49,13 +49,17 @@ git push -u origin main
 | Action | Keyboard | Mobile |
 | --- | --- | --- |
 | Move left / right | Left / right arrows or A / D | Swipe left / right |
-| Jump a striped barrier | Up arrow, W, or Space | Swipe up |
+| Jump a barrier or cargo crate | Up arrow, W, or Space | Swipe up |
 | Slide under a pink gate | Down arrow or S | Swipe down |
 | Pause / resume | P or Escape | Pause button |
 | Start / restart | Space or the green button | Green button |
 | Enter / exit fullscreen | F or the corners button | Corners button |
 
 Trains must be dodged by switching lanes. Jumping will not clear a train. The game pauses automatically when you leave the tab or window.
+
+Blue **magnets** attract coins from all three lanes for 10 seconds. Mint **shields** protect against one collision for up to 12 seconds, with brief protection after the shield breaks so the same obstacle cannot immediately end the run. Timers appear beneath the score and stop while paused. Every run begins with a short coin trail and an early shield. Further pickups appear along safe routes.
+
+The city changes every 750 meters through **Midnight District**, **Violet Market**, and **Harbor Run**, each with its own sky and neon colors. After a collision, the retry screen explains how to avoid that obstacle and shows successful barrier/gate clears alongside distance, coins, and score.
 
 Every visit opens directly in the expanded game view. Tap **LET’S RUN** to start; that gesture also requests native device fullscreen where supported. The score, music toggle, pause, and exit controls stay visible. Native fullscreen requests portrait orientation for phones and landscape for desktops where orientation locking is available. Other browsers adapt to the current orientation. Tap the corners button to return to the page and change difficulty or runner color.
 
@@ -70,15 +74,18 @@ Home Screen launches automatically fill the app window. The manifest requests fu
 ## Features
 
 - Three difficulty modes: Chill, Classic, and Rush, each with increasing speed and different obstacle spacing.
-- Perspective canvas city with buildings, lights, rail tracks, trains, and an animated runner.
+- Perspective canvas city with three district palettes, buildings, lights, rail tracks, trains, gates, barriers, and cargo crates.
+- Original articulated runner with headphones, jacket, backpack, independent limbs, running stride, airborne knee tuck, crouch, landing squash, and lane-change lean.
+- Coin sparkles, landing dust, shield-break feedback, pickup auras, and a brief crash animation. Cosmetic particles and camera shake respect reduced-motion preferences.
+- Shield and magnet pickups, visible countdowns, a friendlier opening, and collision-specific retry advice.
 - Coin collection and two goals per run: 25 coins and 1,000 meters.
 - Score equals whole meters traveled plus 20 points per coin.
 - Best score, runner color, and sound preference saved in this browser’s local storage.
 - Three runner colors, an original looping synthesized soundtrack, and louder sound effects. Sound defaults to enabled, starts after the first user gesture, and respects a saved mute preference. Music stops while paused, after a crash, or when the page is hidden.
 - Responsive layout, immediate swipe gestures without on-screen navigation arrows, keyboard controls, and instructions.
 - Direct expanded game launch, native fullscreen from Play, and Home Screen app support.
-- Fixed 120 Hz simulation, consistent fast lane changes, a short landing jump buffer, and an airborne downward swipe that lands into a slide.
-- Cached scenery and gradients, object sorting only on spawn, reduced distant detail, a bounded canvas resolution, and suspended drawing when paused or hidden.
+- Fixed 120 Hz simulation with interpolated character movement, consistent fast lane changes, a short landing jump buffer, and an airborne downward swipe that lands into a slide.
+- Cached scenery, gradients, and collectible sprites; batched track drawing; object sorting only on spawn; reduced distant detail; a bounded canvas resolution; and a 64-particle pool. Drawing stops when paused or hidden.
 - Original procedural artwork. No third-party assets, fonts, APIs, or tracking.
 
 Saved scores are specific to the browser and origin. If browser storage is blocked, the game still works but preferences and scores cannot persist. This is a single-player game with local scores; it does not include an online leaderboard.
@@ -92,6 +99,9 @@ Saved scores are specific to the browser and origin. If browser storage is block
 | `engine.js` | Game simulation, obstacle generation, and collision detection |
 | `game.js` | Canvas rendering, input, audio, and browser storage |
 | `audio.js` | Original looping music, effects, and audio lifecycle |
+| `character.js` | Original vector character and articulated poses |
+| `items.js` | Cached coin and power-up artwork |
+| `effects.js` | Fixed-size pool for gameplay particles |
 | `fullscreen.js` | Fullscreen, orientation requests, and viewport fallback |
 | `manifest.webmanifest` | Home Screen launch mode and app metadata |
 | `icons/` | Home Screen and app icons |
@@ -110,9 +120,12 @@ node --check engine.js
 node --check game.js
 node --check audio.js
 node --check fullscreen.js
+node --check character.js
+node --check items.js
+node --check effects.js
 ```
 
-The tests cover train collisions and lane changes, jumping barriers, sliding gates, coin scoring, pause/resume, movement bounds, speed caps, safe obstacle generation, frame-independent lane movement, landing jump buffering, airborne slides, and object depth order. Headless Chromium checks cover direct launch, real touch swipes before release, fixed simulation ticks, music scheduling and mute/pause behavior, collision/restart, mobile rotation, and desktop layout. Native fullscreen success events are simulated because headless Chromium cannot enter OS fullscreen; physical iOS Home Screen launches still need device verification.
+The 18 simulation tests cover collisions, movement, coin scoring, pause/resume, difficulty, safe obstacle generation, buffered jumps, airborne slides, depth order, shield protection, magnet collection, pickup expiry/reset, cargo crates, and the opening trail. Headless Chromium checks also cover real swipes before release, fixed simulation ticks, music and mute/pause behavior, character jump/crouch poses, pickup timers, all three districts, collision/restart advice, and phone/desktop layouts. Native fullscreen success events are simulated because headless Chromium cannot enter OS fullscreen; physical iOS Home Screen launches still need device verification.
 
 ## License
 

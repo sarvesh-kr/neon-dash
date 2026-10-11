@@ -14,9 +14,19 @@
       this.coins = 0; this.speed = this.config.start; this.time = 0;
       this.jumpTime = 0; this.slideTime = 0; this.jumpHeight = 0;
       this.jumpQueued = 0;
+      this.laneVelocity = 0; this.landing = 0; this.slidePose = 0;
+      this.magnetTime = 0; this.shieldTime = 0; this.invulnerable = 0;
+      this.nextBoost = 180; this.boostCount = 0; this.dodges = 0;
+      this.effects = []; this.crashReason = '';
       this.objects = []; this.spawnDistance = 0; this.events = [];
     }
-    start(mode = this.mode) { this.reset(mode); this.state = 'running'; this.spawnRow(120); }
+    start(mode = this.mode) {
+      this.reset(mode); this.state = 'running'; this.spawnRow(120);
+      // A readable opening trail and early shield let players find their rhythm.
+      this.objects.push({ lane: 1, z: 70, type: 'shield', collected: false });
+      for (let i = 0; i < 6; i++) this.objects.push({ lane: 1, z: 25 + i * 6, type: 'coin', collected: false });
+      this.objects.sort((a, b) => b.z - a.z);
+    }
     action(action) {
       if (this.state !== 'running') return false;
       if (action === 'left' || action === 'right') {
@@ -40,54 +50,94 @@
     spawnRow(z = 205) {
       const safe = Math.floor(this.random() * 3);
       const blocked = (safe + 1 + Math.floor(this.random() * 2)) % 3;
-      const kinds = ['train', 'barrier', 'gate'];
+      const kinds = ['train', 'barrier', 'gate', 'crate'];
       const type = kinds[Math.floor(this.random() * kinds.length)];
       this.objects.push({ lane: blocked, z, type, checked: false });
       if (this.distance > 280 && this.random() < (this.mode === 'chill' ? 0.2 : 0.45)) {
-        this.objects.push({ lane: 3 - safe - blocked, z, type: kinds[Math.floor(this.random() * 3)], checked: false });
+        this.objects.push({ lane: 3 - safe - blocked, z, type: kinds[Math.floor(this.random() * kinds.length)], checked: false });
       }
       for (let i = 0; i < 6; i++) this.objects.push({ lane: safe, z: z + 4 + i * 4.6, type: 'coin', collected: false });
+      if (this.distance >= this.nextBoost) {
+        this.objects.push({ lane: safe, z: z - 12, type: this.boostCount++ % 2 ? 'shield' : 'magnet', collected: false });
+        this.nextBoost = this.distance + 240;
+      }
       // Every object travels equally, so depth order only changes on spawn.
       this.objects.sort((a, b) => b.z - a.z);
     }
     update(dt) {
       this.events.length = 0;
+      this.effects.length = 0;
       if (this.state !== 'running') return;
       dt = Math.min(0.05, Math.max(0, dt));
       this.time += dt; this.speed = Math.min(this.config.max, this.config.start + this.time * this.config.acceleration);
       const travel = this.speed * dt; this.distance += travel; this.spawnDistance += travel;
+      const previousLane = this.visualLane;
       this.visualLane += (this.lane - this.visualLane) * (1 - Math.exp(-dt * 24));
+      this.laneVelocity = dt ? (this.visualLane - previousLane) / dt : 0;
+      const wasJumping = this.jumpTime > 0;
       this.jumpTime = Math.max(0, this.jumpTime - dt);
       this.slideTime = Math.max(0, this.slideTime - dt);
+      this.slidePose += ((this.slideTime > 0 ? 1 : 0) - this.slidePose) * (1 - Math.exp(-dt * 26));
+      this.landing = Math.max(0, this.landing - dt);
+      this.magnetTime = Math.max(0, this.magnetTime - dt);
+      this.shieldTime = Math.max(0, this.shieldTime - dt);
+      this.invulnerable = Math.max(0, this.invulnerable - dt);
       if (this.jumpQueued > 0 && this.jumpTime === 0) { this.jumpQueued = 0; this.action('jump'); }
       else this.jumpQueued = Math.max(0, this.jumpQueued - dt);
-      this.jumpHeight = this.jumpTime ? Math.sin((1 - this.jumpTime / 0.92) * Math.PI) * 1.7 : 0;
+      const jumpProgress = 1 - this.jumpTime / 0.92;
+      this.jumpHeight = this.jumpTime ? 4 * jumpProgress * (1 - jumpProgress) * 1.7 : 0;
+      if (wasJumping && this.jumpTime === 0) {
+        this.landing = 0.16; this.effects.push({ type: 'land', lane: this.visualLane });
+      }
       if (this.spawnDistance >= this.config.spacing) { this.spawnDistance -= this.config.spacing; this.spawnRow(); }
       for (const object of this.objects) {
         object.z -= travel;
         const sameLane = Math.abs(object.lane - this.visualLane) < 0.48;
         if (object.type === 'coin') {
-          if (!object.collected && sameLane && object.z <= 11 && object.z >= 5) {
+          const attracted = this.magnetTime > 0 && object.z <= 32 && object.z >= 5;
+          if (!object.collected && (attracted || (sameLane && object.z <= 11 && object.z >= 5))) {
             object.collected = true; this.coins++; this.events.push('coin');
+            this.effects.push({ type: 'coin', lane: object.lane, z: object.z });
+          }
+          continue;
+        }
+        if (object.type === 'magnet' || object.type === 'shield') {
+          if (!object.collected && sameLane && object.z <= 11 && object.z >= 5) {
+            object.collected = true;
+            if (object.type === 'magnet') this.magnetTime = 10;
+            else this.shieldTime = 12;
+            this.events.push(object.type); this.effects.push({ type: object.type, lane: this.visualLane });
           }
           continue;
         }
         if (object.type === 'train') {
-          if (sameLane && object.z <= 9 && object.z + 17 >= 6) this.crash();
+          if (sameLane && object.z <= 9 && object.z + 17 >= 6) this.hit(object);
         } else if (!object.checked && object.z <= 9) {
           object.checked = true;
-          if (sameLane && ((object.type === 'barrier' && this.jumpHeight < 0.85) || (object.type === 'gate' && this.slideTime <= 0))) this.crash();
-          else if (sameLane) this.events.push('dodge');
+          if (sameLane && (((object.type === 'barrier' || object.type === 'crate') && this.jumpHeight < 0.85) || (object.type === 'gate' && this.slideTime <= 0))) this.hit(object);
+          else if (sameLane) { this.dodges++; this.events.push('dodge'); this.effects.push({ type: 'dodge', lane: this.visualLane }); }
         }
         if (this.state === 'over') break;
       }
       let retained = 0;
       for (const object of this.objects) {
-        if (!object.collected && (object.type === 'train' ? object.z > -18 : object.z > -5)) this.objects[retained++] = object;
+        if (!object.collected && !object.destroyed && (object.type === 'train' ? object.z > -18 : object.z > -5)) this.objects[retained++] = object;
       }
       this.objects.length = retained;
     }
-    crash() { if (this.state === 'running') { this.state = 'over'; this.events.push('crash'); } }
+    hit(object) {
+      if (this.invulnerable > 0) return;
+      if (this.shieldTime > 0) {
+        this.shieldTime = 0; this.invulnerable = 0.8; object.destroyed = true;
+        this.events.push('shield-break'); this.effects.push({ type: 'shield-break', lane: this.visualLane });
+      } else this.crash(object.type);
+    }
+    crash(type = 'train') {
+      if (this.state === 'running') {
+        this.state = 'over'; this.crashReason = type; this.events.push('crash');
+        this.effects.push({ type: 'crash', lane: this.visualLane });
+      }
+    }
     get score() { return Math.floor(this.distance) + this.coins * 20; }
   }
   root.RunnerEngine = RunnerEngine;

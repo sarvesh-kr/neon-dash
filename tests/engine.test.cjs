@@ -48,7 +48,7 @@ test('obstacle generation always leaves a lane clear and places coins there', ()
   let seed = 42; const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   const game = new RunnerEngine(random); game.distance = 2000;
   for (let i = 0; i < 100; i++) {
-    game.objects = []; game.spawnRow(); const obstacles = game.objects.filter(o => o.type !== 'coin');
+    game.objects = []; game.spawnRow(); const obstacles = game.objects.filter(o => ['train', 'barrier', 'gate', 'crate'].includes(o.type));
     const coins = game.objects.filter(o => o.type === 'coin');
     assert.ok(new Set(obstacles.map(o => o.lane)).size <= 2);
     assert.ok(coins.every(coin => obstacles.every(o => o.lane !== coin.lane)));
@@ -80,4 +80,40 @@ test('spawned objects keep depth order and collected coins stop rendering', () =
   game.objects.push({ type: 'coin', lane: 1, z: 9 }); game.update(0.01);
   assert.equal(game.coins, 1); assert.equal(game.objects, objects);
   assert.ok(game.objects.every(object => !object.collected));
+});
+
+test('a shield absorbs one train hit without dying on its next frame', () => {
+  const game = running(); game.shieldTime = 12; obstacle(game, 'train');
+  game.update(0.05); assert.equal(game.state, 'running'); assert.equal(game.shieldTime, 0);
+  assert.ok(game.events.includes('shield-break')); assert.equal(game.objects.length, 0);
+  game.update(0.05); assert.equal(game.state, 'running');
+  game.invulnerable = 0; obstacle(game, 'train'); game.update(0.05); assert.equal(game.state, 'over');
+});
+test('a magnet attracts nearby coins across lanes, then expires', () => {
+  const game = running(); game.magnetTime = 0.07;
+  game.objects = [{ type: 'coin', lane: 0, z: 20 }, { type: 'coin', lane: 2, z: 28 }, { type: 'coin', lane: 2, z: 80 }];
+  game.update(0.01); assert.equal(game.coins, 2);
+  step(game, 0.1); assert.equal(game.magnetTime, 0);
+  assert.equal(game.coins, 2);
+});
+test('pickups activate on contact and pause freezes their timers', () => {
+  for (const [type, property, duration] of [['shield', 'shieldTime', 12], ['magnet', 'magnetTime', 10]]) {
+    const game = running(); game.objects = [{ type, lane: 1, z: 10 }]; game.update(0.01);
+    assert.equal(game[property], duration); assert.ok(game.events.includes(type));
+    game.pause(); game.update(0.05); assert.equal(game[property], duration);
+    game.start(); assert.equal(game[property], 0);
+  }
+});
+test('cargo crates can be jumped and identify the reason for a collision', () => {
+  const hit = running(); obstacle(hit, 'crate'); hit.update(0.05);
+  assert.equal(hit.state, 'over'); assert.equal(hit.crashReason, 'crate');
+  const jump = running(); jump.action('jump'); step(jump, 0.25); obstacle(jump, 'crate');
+  jump.update(0.05); assert.equal(jump.state, 'running'); assert.equal(jump.dodges, 1);
+});
+test('the opening provides a coin trail and shield before the first obstacle', () => {
+  const game = new RunnerEngine(() => 0.1); game.start();
+  const shield = game.objects.find(o => o.type === 'shield');
+  const hazard = game.objects.find(o => o.type === 'train');
+  assert.equal(shield.lane, 1); assert.ok(shield.z < hazard.z);
+  assert.ok(game.objects.some(o => o.type === 'coin' && o.z < shield.z));
 });
