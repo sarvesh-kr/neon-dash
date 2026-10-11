@@ -9,7 +9,8 @@
   const game = new RunnerEngine();
   const geometry = NeonGeometry;
   const gesture = new NeonSwipe();
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reducedMotion = motionPreference.matches;
   const districts = [
     {
       name: 'MIDNIGHT DISTRICT',
@@ -51,6 +52,7 @@
   let impact = 0,
     endDelay = 0,
     finishShown = true,
+    newRecord = false,
     particleCount = 0,
     dustDistance = 0;
   let width = 900,
@@ -170,6 +172,13 @@
         effect.type === 'coin' && game.magnetTime > 0 ? target : null,
       );
     if (effect.type === 'crash') {
+      // Persist the completed run before an animation or navigation can delay it.
+      newRecord = game.score > best;
+      if (newRecord) {
+        best = game.score;
+        preferences.set('best', best);
+        $('header-best').textContent = format(best);
+      }
       impact = 0.3;
       endDelay = 0.3;
       NeonAudio.setPlaying(false);
@@ -228,6 +237,7 @@
     lastTime = 0;
     endDelay = 0;
     finishShown = false;
+    newRecord = false;
     impact = 0;
     NeonEffects.reset();
     particleCount = 0;
@@ -258,12 +268,7 @@
     gesture.reset();
     finishShown = true;
     NeonAudio.setPlaying(false);
-    const record = game.score > best;
-    if (record) {
-      best = game.score;
-      preferences.set('best', best);
-      $('header-best').textContent = format(best);
-    }
+    const record = newRecord;
     $('overlay').className = 'overlay finished';
     setOverlayTitle(record ? 'NEW' : 'WHAT A', record ? 'RECORD.' : 'RUN.');
     const tips = {
@@ -1137,6 +1142,17 @@
     releaseRendering();
   });
   window.addEventListener('pageshow', restoreRendering);
+  function updateMotionPreference(event) {
+    reducedMotion = event.matches;
+    NeonEffects.reset();
+    particleCount = 0;
+    impact = 0;
+    drawnState = undefined;
+    scheduleFrame();
+  }
+  if (motionPreference.addEventListener)
+    motionPreference.addEventListener('change', updateMotionPreference);
+  else motionPreference.addListener(updateMotionPreference);
   $('header-best').textContent = format(best);
   setColor(runnerColor);
   updateSoundButton();

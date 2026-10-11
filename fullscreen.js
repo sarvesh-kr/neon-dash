@@ -10,6 +10,14 @@
     orientationLocked = false,
     savedScroll = 0;
   const nativeElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  async function exitNative() {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    try {
+      if (exit) await exit.call(document);
+    } catch (_) {
+      /* A denied or interrupted native exit must not break the controls. */
+    }
+  }
 
   async function lockOrientation() {
     if (!screen.orientation?.lock) return;
@@ -25,10 +33,7 @@
 
   function sync() {
     const native = nativeElement() === frame;
-    if (native && !wanted) {
-      const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      if (exit) Promise.resolve(exit.call(document)).catch(() => {});
-    }
+    if (native && !wanted) void exitNative();
     if (native) frame.classList.remove('expanded');
     frame.classList.toggle('native-fullscreen', native);
     const expanded = native || frame.classList.contains('expanded');
@@ -87,12 +92,7 @@
     if (active) {
       wanted = false;
       frame.classList.remove('expanded');
-      if (nativeElement() === frame) {
-        const exit = document.exitFullscreen || document.webkitExitFullscreen;
-        try {
-          if (exit) await exit.call(document);
-        } catch (_) {}
-      }
+      if (nativeElement() === frame) await exitNative();
       sync();
     } else await enterNative();
     canvas.focus({ preventScroll: true });
@@ -107,7 +107,9 @@
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       if (
         document.querySelector('dialog[open]') ||
-        event.target.closest?.('input, textarea, select, [contenteditable="true"]')
+        event.target.closest?.(
+          'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+        )
       )
         return;
       if (event.key.toLowerCase() === 'f') {

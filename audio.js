@@ -7,7 +7,9 @@
     nextNote = 0,
     step = 0;
   let enabled = true,
-    playing = false;
+    playing = false,
+    available = true,
+    suspension = null;
   const voices = new Set();
   const voiceLimit = 32;
   const melody = [76, 0, 79, 83, 0, 79, 74, 0, 76, 0, 79, 86, 83, 0, 79, 74];
@@ -35,6 +37,7 @@
   }
 
   function tone(from, to, at, duration, volume, type = 'sine', music = false) {
+    if (!available) return;
     if (voices.size >= voiceLimit) {
       if (!music) return;
       // Music takes priority over a burst of pickup/restart effects.
@@ -46,27 +49,45 @@
         }
       dispose(oldest);
     }
-    const oscillator = context.createOscillator(),
+    let oscillator, gain;
+    try {
+      oscillator = context.createOscillator();
       gain = context.createGain();
-    oscillator.type = type;
-    oscillator.frequency.setValueAtTime(from, at);
-    if (to !== from) oscillator.frequency.exponentialRampToValueAtTime(to, at + duration);
-    gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(volume, at + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
-    oscillator.connect(gain);
-    gain.connect(master);
-    const voice = { oscillator, gain, music };
-    voices.add(voice);
-    oscillator.onended = () => {
-      dispose(voice, false);
-    };
-    oscillator.start(at);
-    oscillator.stop(at + duration + 0.025);
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(from, at);
+      if (to !== from) oscillator.frequency.exponentialRampToValueAtTime(to, at + duration);
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(volume, at + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+      oscillator.connect(gain);
+      gain.connect(master);
+      const voice = { oscillator, gain, music };
+      voices.add(voice);
+      oscillator.onended = () => {
+        dispose(voice, false);
+      };
+      oscillator.start(at);
+      oscillator.stop(at + duration + 0.025);
+    } catch (_) {
+      // Audio failures must never abort a simulation tick or leave connected nodes.
+      available = false;
+      if (oscillator) oscillator.onended = null;
+      try {
+        oscillator?.stop();
+      } catch (_) {}
+      try {
+        oscillator?.disconnect();
+      } catch (_) {}
+      try {
+        gain?.disconnect();
+      } catch (_) {}
+      suspend();
+    }
   }
 
   function schedule() {
-    if (!enabled || !playing || document.hidden || context?.state !== 'running') return;
+    if (!available || !enabled || !playing || document.hidden || context?.state !== 'running')
+      return;
     const now = context.currentTime;
     // Do not play a backlog after an OS suspension or a delayed timer.
     if (nextNote < now) nextNote = now + 0.02;
@@ -98,10 +119,23 @@
   }
   function suspend() {
     stopAll();
-    if (context?.state === 'running') context.suspend().catch(() => {});
+    if (context?.state === 'running' && !suspension) {
+      try {
+        const attempt = Promise.resolve(context.suspend());
+        suspension = attempt;
+        const settled = () => {
+          if (suspension === attempt) suspension = null;
+        };
+        attempt.then(settled, settled);
+      } catch (_) {}
+    }
   }
   function sync() {
     if (!context) return;
+    if (!available || context.state === 'closed') {
+      stopAll();
+      return;
+    }
     master.gain.setTargetAtTime(enabled && !document.hidden ? 0.85 : 0, context.currentTime, 0.015);
     if (!enabled || document.hidden) {
       suspend();
@@ -118,40 +152,54 @@
     if (!timer) {
       nextNote = context.currentTime + 0.025;
       schedule();
-      timer = setInterval(schedule, 80);
+      if (available) timer = setInterval(schedule, 80);
     }
   }
   function unlock() {
-    if (!enabled) return;
+    if (!enabled || !available) return;
+    let candidate;
     try {
+      if (context?.state === 'closed') {
+        context = master = null;
+        suspension = null;
+      }
       if (!context) {
         const Audio = window.AudioContext || window.webkitAudioContext;
         if (!Audio) return;
-        context = new Audio({ latencyHint: 'interactive' });
-        master = context.createGain();
-        const compressor = context.createDynamicsCompressor();
+        candidate = new Audio({ latencyHint: 'interactive' });
+        const output = candidate.createGain();
+        const compressor = candidate.createDynamicsCompressor();
         compressor.threshold.value = -12;
         compressor.knee.value = 12;
         compressor.ratio.value = 4;
         compressor.attack.value = 0.003;
         compressor.release.value = 0.12;
-        master.connect(compressor);
-        compressor.connect(context.destination);
-        context.addEventListener('statechange', sync);
+        output.connect(compressor);
+        compressor.connect(candidate.destination);
+        candidate.addEventListener('statechange', sync);
+        master = output;
+        context = candidate;
       }
-      if (context.state === 'suspended' || context.state === 'interrupted')
+      if (suspension || context.state === 'suspended' || context.state === 'interrupted')
         context
           .resume()
           .then(sync)
           .catch(() => {});
       else sync();
     } catch (_) {
+      available = false;
+      suspend();
+      if (candidate && context !== candidate) {
+        try {
+          Promise.resolve(candidate.close()).catch(() => {});
+        } catch (_) {}
+      }
       /* The game remains playable if audio is unavailable. */
     }
   }
   function effect(type) {
-    if (!enabled || !context || context.state !== 'running') return;
-    const [from, to, duration] = effects[type] || effects.coin;
+    if (!available || !enabled || !context || context.state !== 'running') return;
+    const [from, to, duration] = Object.hasOwn(effects, type) ? effects[type] : effects.coin;
     tone(from, to, context.currentTime, duration, 0.18, type === 'crash' ? 'sawtooth' : 'sine');
   }
   window.NeonAudio = {
@@ -159,6 +207,7 @@
     effect,
     setEnabled(value) {
       enabled = value;
+      if (enabled) available = true;
       sync();
     },
     setPlaying(value) {

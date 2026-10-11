@@ -373,16 +373,12 @@
       this.shieldTime = Math.max(0, this.motion.shield - elapsed);
       this.invulnerable = Math.max(0, this.motion.invulnerable - elapsed);
       this.magnetTime = Math.max(0, this.motion.magnet - elapsed);
+      let retained = 0;
       for (const object of this.objects) {
         const shape = GEOMETRY[object.type];
         if (
-          !shape ||
-          object.type === 'coin' ||
-          object.type === 'shield' ||
-          object.type === 'magnet'
-        )
-          continue;
-        if (
+          shape &&
+          !Object.hasOwn(shape, 'bottom') &&
           !object.checked &&
           object.z + shape.length < GEOMETRY.runner.z - GEOMETRY.runner.halfDepth
         ) {
@@ -393,9 +389,6 @@
             this.effects.push({ type: 'dodge', lane: this.visualLane });
           }
         }
-      }
-      let retained = 0;
-      for (const object of this.objects) {
         if (
           !object.collected &&
           !object.destroyed &&
