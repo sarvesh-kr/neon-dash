@@ -39,38 +39,32 @@
     // ResizeObserver handles the canvas resolution after native or CSS resizing.
   }
 
-  async function toggle() {
-    if (busy) return;
-    busy = true;
+  async function enterNative() {
+    if (nativeElement() === frame) return;
+    if (!active) savedScroll = window.scrollY;
+    frame.classList.add('expanded'); sync();
+    if (busy) { wanted = true; return; }
+    const request = frame.requestFullscreen || frame.webkitRequestFullscreen;
+    if (!request || document.body.classList.contains('home-screen-app')) return;
+    wanted = true; busy = true;
+    let timeout;
     try {
+      const attempt = frame.requestFullscreen ? request.call(frame, { navigationUI: 'hide' }) : request.call(frame);
+      await Promise.race([attempt, new Promise(resolve => { timeout = setTimeout(resolve, 2000); })]);
+    } catch (_) { /* The expanded view is already visible if native fullscreen is denied. */ }
+    finally { clearTimeout(timeout); busy = false; sync(); }
+  }
+
+  async function toggle() {
+    if (active) {
+      wanted = false; frame.classList.remove('expanded');
       if (nativeElement() === frame) {
-        wanted = false;
         const exit = document.exitFullscreen || document.webkitExitFullscreen;
-        if (exit) await exit.call(document);
-      } else if (frame.classList.contains('expanded')) {
-        wanted = false;
-        frame.classList.remove('expanded');
-      } else {
-        wanted = true;
-        savedScroll = window.scrollY;
-        const request = frame.requestFullscreen || frame.webkitRequestFullscreen;
-        if (request) {
-          let timeout;
-          try {
-            const attempt = frame.requestFullscreen ? request.call(frame, { navigationUI: 'hide' }) : request.call(frame);
-            await Promise.race([attempt, new Promise((_, reject) => {
-              timeout = setTimeout(() => reject(new Error('Fullscreen did not respond')), 2000);
-            })]);
-          } catch (_) {
-            if (wanted && nativeElement() !== frame) frame.classList.add('expanded');
-          } finally { clearTimeout(timeout); }
-        } else frame.classList.add('expanded');
+        try { if (exit) await exit.call(document); } catch (_) {}
       }
-    } catch (_) { /* Keep the current view if a browser declines an exit. */ }
-    finally {
-      sync(); busy = false;
-      canvas.focus({ preventScroll: true });
-    }
+      sync();
+    } else await enterNative();
+    canvas.focus({ preventScroll: true });
   }
 
   button.addEventListener('click', toggle);
@@ -87,15 +81,12 @@
     }
   }, true);
 
-  // Home Screen apps already have their browser controls removed by the OS.
-  // Fill that app window immediately; requesting native fullscreen on load
-  // would fail because it requires a user gesture.
+  // Fill the viewport immediately for every visit. Native device fullscreen
+  // is requested from the Play gesture because browsers disallow it on load.
   const appLaunch = navigator.standalone === true ||
     window.matchMedia('(display-mode: standalone)').matches ||
     window.matchMedia('(display-mode: fullscreen)').matches;
-  if (appLaunch) {
-    document.body.classList.add('home-screen-app');
-    frame.classList.add('expanded');
-    sync();
-  }
+  if (appLaunch) document.body.classList.add('home-screen-app');
+  frame.classList.add('expanded'); sync();
+  window.NeonFullscreen = { enterNative };
 })();

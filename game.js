@@ -1,10 +1,10 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const canvas = $('game'), ctx = canvas.getContext('2d');
+  const canvas = $('game'), ctx = canvas.getContext('2d', { alpha: false });
   const game = new RunnerEngine();
   let width = 900, height = 530, lastTime = 0, ambient = 0, selectedMode = 'classic';
-  let soundEnabled = false, audioContext, best = 0, runnerColor = 'mint', toastTimer;
+  let soundEnabled = true, best = 0, runnerColor = 'mint', toastTimer;
   let coinGoal = false, distanceGoal = false, touchStart = null;
   const palettes = { mint: { color: '#72f3cb', name: 'The Night Shift' }, pink: { color: '#ff7baf', name: 'Pink Noise' }, blue: { color: '#88acff', name: 'Blue Hour' } };
   const format = value => Math.floor(value).toLocaleString();
@@ -13,24 +13,14 @@
     best = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
     const savedColor = localStorage.getItem('neon-dash-color');
     if (palettes[savedColor]) runnerColor = savedColor;
-    soundEnabled = localStorage.getItem('neon-dash-sound') === 'true';
+    soundEnabled = localStorage.getItem('neon-dash-sound') !== 'false';
   } catch (_) { /* Storage can be unavailable in private or embedded browsers. */ }
   function save(key, value) { try { localStorage.setItem(key, String(value)); } catch (_) {} }
-  function sound(type) {
-    if (!soundEnabled) return;
-    try {
-      audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
-      if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
-      const osc = audioContext.createOscillator(), gain = audioContext.createGain();
-      const now = audioContext.currentTime;
-      const tones = { coin: [880, 1320, 0.1], jump: [240, 500, 0.13], slide: [180, 80, 0.15], crash: [120, 30, 0.35], goal: [660, 1320, 0.3], start: [330, 660, 0.18] };
-      const [from, to, duration] = tones[type] || tones.coin;
-      osc.type = type === 'crash' ? 'sawtooth' : 'sine';
-      osc.frequency.setValueAtTime(from, now); osc.frequency.exponentialRampToValueAtTime(to, now + duration);
-      gain.gain.setValueAtTime(0.0001, now); gain.gain.exponentialRampToValueAtTime(0.07, now + 0.008); gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-      osc.connect(gain); gain.connect(audioContext.destination); osc.start(now); osc.stop(now + duration + 0.02);
-    } catch (_) { /* Audio is optional. */ }
-  }
+  const sound = type => NeonAudio.effect(type);
+  const isTouch = () => navigator.maxTouchPoints > 0;
+  const nodes = Object.fromEntries(['distance-value', 'coins', 'coin-progress', 'distance-progress', 'coin-bar', 'distance-bar', 'speed-label'].map(id => [id, $(id)]));
+  const hudValues = {};
+  function text(id, value) { if (hudValues[id] !== value) { nodes[id].textContent = value; hudValues[id] = value; } }
   function setColor(color) {
     runnerColor = color; document.documentElement.style.setProperty('--runner', palettes[color].color);
     $('runner-name').textContent = palettes[color].name;
@@ -51,25 +41,27 @@
   }
   function setModesEnabled(enabled) { document.querySelectorAll('[data-mode]').forEach(button => { button.disabled = !enabled; }); }
   function updateHUD() {
-    $('distance').innerHTML = `${format(game.distance)}<span> m</span>`;
-    $('coins').textContent = format(game.coins);
-    $('coin-progress').textContent = `${Math.min(25, game.coins)} / 25`;
-    $('distance-progress').textContent = `${format(Math.min(1000, game.distance))} / 1,000`;
-    $('coin-bar').style.width = `${Math.min(100, game.coins / 25 * 100)}%`;
-    $('distance-bar').style.width = `${Math.min(100, game.distance / 10)}%`;
-    $('speed-label').textContent = `${selectedMode.toUpperCase()} · ${Math.round(game.speed * 3.6)} KM/H`;
+    text('distance-value', format(game.distance)); text('coins', format(game.coins));
+    text('coin-progress', `${Math.min(25, game.coins)} / 25`);
+    text('distance-progress', `${format(Math.min(1000, game.distance))} / 1,000`);
+    nodes['coin-bar'].style.transform = `scaleX(${Math.min(1, game.coins / 25)})`;
+    nodes['distance-bar'].style.transform = `scaleX(${Math.min(1, game.distance / 1000)})`;
+    text('speed-label', `${selectedMode.toUpperCase()} · ${Math.round(game.speed * 3.6)} KM/H`);
     if (!coinGoal && game.coins >= 25) { coinGoal = true; showToast('✦ Follow the gold — goal complete!'); sound('goal'); }
     if (!distanceGoal && game.distance >= 1000) { distanceGoal = true; showToast('✦ Go the distance — goal complete!'); sound('goal'); }
   }
   function startRun() {
+    void NeonFullscreen.enterNative(); NeonAudio.unlock(); NeonAudio.setPlaying(true);
+    accumulator = 0; lastTime = 0;
     game.start(selectedMode); coinGoal = false; distanceGoal = false;
     $('overlay').className = 'overlay hidden'; $('hud').hidden = false; $('pause-button').disabled = false;
     $('pause-button').textContent = 'Ⅱ'; $('pause-button').setAttribute('aria-label', 'Pause game');
-    $('game-status').textContent = 'KEEP MOVING'; $('touch-controls').classList.add('active');
+    $('game-status').textContent = 'KEEP MOVING';
     $('toast').classList.remove('show'); clearTimeout(toastTimer);
     setModesEnabled(false); sound('start'); updateHUD(); canvas.focus({ preventScroll: true });
   }
   function finishRun() {
+    NeonAudio.setPlaying(false);
     const record = game.score > best;
     if (record) { best = game.score; save('neon-dash-best', best); $('header-best').textContent = format(best); }
     $('overlay').className = 'overlay finished'; $('overlay-title').innerHTML = record ? 'NEW<br><span>RECORD.</span>' : 'WHAT A<br><span>RUN.</span>';
@@ -77,29 +69,31 @@
     $('overlay').querySelector('.title-badge').textContent = record ? 'YOU JUST RAISED THE BAR' : 'THE CITY WILL BE WAITING';
     $('run-results').hidden = false; $('result-distance').textContent = `${format(game.distance)} m`;
     $('result-coins').textContent = format(game.coins); $('result-score').textContent = format(game.score);
-    $('play-label').textContent = 'RUN IT BACK'; $('start-hint').innerHTML = 'or press <kbd>SPACE</kbd> to try again';
-    $('pause-button').disabled = true; $('touch-controls').classList.remove('active'); $('game-status').textContent = 'ONE MORE TRY?';
+    $('play-label').textContent = 'RUN IT BACK'; $('start-hint').textContent = isTouch() ? 'Swipe to move · up to jump · down to slide' : 'or press SPACE to try again';
+    $('pause-button').disabled = true; $('game-status').textContent = 'ONE MORE TRY?';
     setModesEnabled(true); $('play-button').focus({ preventScroll: true });
   }
   function togglePause() {
     if (game.state === 'running') {
+      NeonAudio.setPlaying(false); accumulator = 0;
       game.pause(); $('overlay').className = 'overlay paused'; $('overlay-title').innerHTML = 'TAKE A<br><span>BREATHER.</span>';
       $('overlay-copy').textContent = 'Your run is right here when you’re ready.'; $('run-results').hidden = true;
       $('overlay').querySelector('.title-badge').textContent = 'EVEN THE FASTEST NEED A BREAK';
-      $('play-label').textContent = 'KEEP GOING'; $('start-hint').innerHTML = 'or press <kbd>P</kbd> to resume';
+      $('play-label').textContent = 'KEEP GOING'; $('start-hint').textContent = isTouch() ? 'Tap KEEP GOING to resume' : 'or press P to resume';
       $('pause-button').textContent = '▶'; $('pause-button').setAttribute('aria-label', 'Resume game');
-      $('touch-controls').classList.remove('active'); $('game-status').textContent = 'CATCH YOUR BREATH';
+      $('game-status').textContent = 'CATCH YOUR BREATH';
       $('play-button').focus({ preventScroll: true });
     } else if (game.state === 'paused' && !document.querySelector('dialog[open]')) {
+      lastTime = 0; accumulator = 0; NeonAudio.unlock(); NeonAudio.setPlaying(true);
       game.resume(); $('overlay').className = 'overlay hidden'; $('pause-button').textContent = 'Ⅱ';
-      $('pause-button').setAttribute('aria-label', 'Pause game'); $('touch-controls').classList.add('active');
+      $('pause-button').setAttribute('aria-label', 'Pause game');
       $('game-status').textContent = 'KEEP MOVING'; canvas.focus({ preventScroll: true });
     }
   }
-  function action(type) { if (game.state !== 'running') return; game.action(type); if (type === 'jump' || type === 'slide') sound(type); }
+  function action(type) { if (game.action(type) && (type === 'jump' || type === 'slide')) sound(type); }
   $('play-button').addEventListener('click', () => game.state === 'paused' ? togglePause() : startRun());
   $('pause-button').addEventListener('click', togglePause);
-  $('sound-button').addEventListener('click', () => { soundEnabled = !soundEnabled; save('neon-dash-sound', soundEnabled); updateSoundButton(); if (soundEnabled) sound('coin'); });
+  $('sound-button').addEventListener('click', () => { soundEnabled = !soundEnabled; save('neon-dash-sound', soundEnabled); NeonAudio.setEnabled(soundEnabled); updateSoundButton(); if (soundEnabled) NeonAudio.unlock(); });
   document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => {
     selectedMode = button.dataset.mode;
     document.querySelectorAll('[data-mode]').forEach(item => { const selected = item === button; item.classList.toggle('selected', selected); item.setAttribute('aria-pressed', String(selected)); });
@@ -126,15 +120,23 @@
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden && game.state === 'running') togglePause(); });
   window.addEventListener('blur', () => { if (game.state === 'running') togglePause(); });
-  canvas.addEventListener('pointerdown', event => { touchStart = { x: event.clientX, y: event.clientY }; canvas.setPointerCapture(event.pointerId); });
-  canvas.addEventListener('pointerup', event => {
-    if (!touchStart) return;
-    const dx = event.clientX - touchStart.x, dy = event.clientY - touchStart.y; touchStart = null;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
-    action(Math.abs(dx) > Math.abs(dy) ? dx > 0 ? 'right' : 'left' : dy < 0 ? 'jump' : 'slide');
+  canvas.addEventListener('pointerdown', event => {
+    if (!event.isPrimary || game.state !== 'running') return;
+    touchStart = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    canvas.setPointerCapture(event.pointerId);
   });
+  function swipe(event) {
+    if (!touchStart || event.pointerId !== touchStart.id) return;
+    const dx = event.clientX - touchStart.x, dy = event.clientY - touchStart.y;
+    const threshold = Math.max(14, Math.min(24, width * 0.04));
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < threshold) return;
+    touchStart = null;
+    action(Math.abs(dx) > Math.abs(dy) ? dx > 0 ? 'right' : 'left' : dy < 0 ? 'jump' : 'slide');
+  }
+  canvas.addEventListener('pointermove', swipe, { passive: true });
+  canvas.addEventListener('pointerup', event => { swipe(event); touchStart = null; });
   canvas.addEventListener('pointercancel', () => { touchStart = null; });
-  document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('pointerdown', event => { event.preventDefault(); action(button.dataset.action); }));
+  canvas.addEventListener('lostpointercapture', () => { touchStart = null; });
 
   // Perspective projection and original procedural scenery.
   function project(x, z, elevation = 0) {
@@ -150,7 +152,12 @@
   function seeded() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
   const skyline = Array.from({ length: 60 }, () => ({ x: seeded(), w: 0.015 + seeded() * 0.045, h: 0.035 + seeded() * 0.22, windows: seeded(), color: seeded() }));
   const stars = Array.from({ length: 44 }, () => ({ x: seeded(), y: seeded() * 0.29, alpha: seeded() * 0.5 + 0.1 }));
-  function background() {
+  const backdrop = document.createElement('canvas');
+  let floorGradient, fogGradient, vignetteGradient;
+  function cacheScenery(dpr) {
+    backdrop.width = canvas.width; backdrop.height = canvas.height;
+    const ctx = backdrop.getContext('2d', { alpha: false });
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const sky = ctx.createLinearGradient(0, 0, 0, height);
     sky.addColorStop(0, '#14192d'); sky.addColorStop(0.28, '#3d2847'); sky.addColorStop(0.45, '#6b3e5e'); sky.addColorStop(1, '#111b2b');
     ctx.fillStyle = sky; ctx.fillRect(0, 0, width, height);
@@ -163,11 +170,18 @@
       ctx.fillStyle = building.color > 0.5 ? '#25253bbd' : '#29243cda'; ctx.fillRect(x, y, bw, bh);
       ctx.fillStyle = building.color > 0.5 ? '#c98ba84a' : '#7593b348';
       for (let row = 0; row < Math.floor(bh / 10); row++) for (let col = 0; col < Math.floor(bw / 8); col++) if ((row * 3 + col * 5 + Math.floor(building.windows * 9)) % 4 !== 0) ctx.fillRect(x + 4 + col * 8, y + 6 + row * 10, 2, 3);
-      if (building.h > 0.16) line({ x: x + bw / 2, y }, { x: x + bw / 2, y: y - 10 }, '#5a4264');
+      if (building.h > 0.16) { ctx.strokeStyle = '#5a4264'; ctx.beginPath(); ctx.moveTo(x + bw / 2, y); ctx.lineTo(x + bw / 2, y - 10); ctx.stroke(); }
     }
-    const floor = ctx.createLinearGradient(0, height * 0.35, 0, height);
-    floor.addColorStop(0, '#293046'); floor.addColorStop(1, '#141d2e');
-    polygon([project(-1.67, 280), project(1.67, 280), project(1.67, -3), project(-1.67, -3)], floor);
+    floorGradient = ctx.createLinearGradient(0, height * 0.35, 0, height);
+    floorGradient.addColorStop(0, '#293046'); floorGradient.addColorStop(1, '#141d2e');
+    fogGradient = ctx.createLinearGradient(0, height * 0.32, 0, height * 0.6);
+    fogGradient.addColorStop(0, '#77517075'); fogGradient.addColorStop(1, '#77517000');
+    vignetteGradient = ctx.createRadialGradient(width / 2, height * 0.5, width * 0.1, width / 2, height * 0.5, width * 0.68);
+    vignetteGradient.addColorStop(0, '#090d1700'); vignetteGradient.addColorStop(1, '#090d1755');
+  }
+  function background() {
+    ctx.drawImage(backdrop, 0, 0, width, height);
+    polygon([project(-1.67, 280), project(1.67, 280), project(1.67, -3), project(-1.67, -3)], floorGradient);
     polygon([project(-3.5, 280), project(-1.67, 280), project(-1.67, -3), project(-3.5, -3)], '#242033');
     polygon([project(1.67, 280), project(3.5, 280), project(3.5, -3), project(1.67, -3)], '#242033');
     line(project(-1.66, 280), project(-1.66, -3), '#af66b58c', 2); line(project(1.66, 280), project(1.66, -3), '#af66b58c', 2);
@@ -196,8 +210,7 @@
         ctx.shadowBlur = 15 * bottom.scale; ctx.shadowColor = '#ff9ddd'; line(end, project(side * 1.4, z, 2.8), '#ffc2ed', Math.max(1, bottom.scale * 5)); ctx.shadowBlur = 0;
       }
     }
-    const fog = ctx.createLinearGradient(0, height * 0.32, 0, height * 0.6);
-    fog.addColorStop(0, '#77517075'); fog.addColorStop(1, '#77517000'); ctx.fillStyle = fog; ctx.fillRect(0, height * 0.32, width, height * 0.3);
+    ctx.fillStyle = fogGradient; ctx.fillRect(0, height * 0.32, width, height * 0.3);
   }
   function streetBuilding(side, z, index) {
     const inner = side * 2.35, outer = side * (3.6 + index % 3 * 0.4), tall = 3.3 + index % 4 * 0.7;
@@ -205,6 +218,7 @@
     const back = project(inner, z + 29, tall), backBottom = project(inner, z + 29);
     polygon([a, d, back, backBottom], index % 2 ? '#28263b' : '#22283c', '#494057');
     polygon([a, b, c, d], '#201f33', '#43354c');
+    if (a.scale < 0.13) return; // Distant windows and signs occupy subpixel areas.
     for (let floor = 0.6; floor < tall - 0.2; floor += 0.55) {
       for (let room = 0; room < 3; room++) {
         const start = z + 3 + room * 8, color = (floor * 10 + room + index) % 3 > 1 ? '#d9a8889c' : '#9d75b473';
@@ -287,36 +301,56 @@
     ctx.fillStyle = '#2a2336'; ctx.beginPath(); ctx.roundRect(-14, -115, 28, 21, [11, 11, 4, 4]); ctx.fill();
     ctx.fillStyle = '#545067'; ctx.fillRect(-15, -98, 30, 5); ctx.restore();
   }
-  const demoObjects = [{ lane: 0, z: 68, type: 'train' }, { lane: 2, z: 105, type: 'train' }, { lane: 2, z: 38, type: 'barrier' }, ...Array.from({ length: 9 }, (_, i) => ({ lane: 1, z: 23 + i * 8, type: 'coin' }))];
+  const demoObjects = [{ lane: 0, z: 68, type: 'train' }, { lane: 2, z: 105, type: 'train' }, { lane: 2, z: 38, type: 'barrier' }, ...Array.from({ length: 9 }, (_, i) => ({ lane: 1, z: 23 + i * 8, type: 'coin' }))].sort((a, b) => b.z - a.z);
   function render() {
-    ctx.clearRect(0, 0, width, height); background();
+    background();
     const objects = game.state === 'ready' ? demoObjects : game.objects;
-    const sorted = [...objects].sort((a, b) => b.z - a.z);
     let playerDrawn = false;
-    for (const object of sorted) {
+    for (const object of objects) {
       if (!playerDrawn && object.z < 8.5) { runner(); playerDrawn = true; }
       drawObject(object);
     }
     if (!playerDrawn) runner();
-    const vignette = ctx.createRadialGradient(width / 2, height * 0.5, width * 0.1, width / 2, height * 0.5, width * 0.68);
-    vignette.addColorStop(0, '#090d1700'); vignette.addColorStop(1, '#090d1755'); ctx.fillStyle = vignette; ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = vignetteGradient; ctx.fillRect(0, 0, width, height);
   }
   function resize() {
-    const rect = canvas.getBoundingClientRect(); width = rect.width; height = rect.height;
-    const dpr = Math.min(2, window.devicePixelRatio || 1); canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    width = rect.width; height = rect.height;
+    // Bound raster work on high-density phones and large desktop displays.
+    const dpr = Math.min(2, window.devicePixelRatio || 1, Math.sqrt(1800000 / (width * height)));
+    const pixelWidth = Math.round(width * dpr), pixelHeight = Math.round(height * dpr);
+    if (canvas.width === pixelWidth && canvas.height === pixelHeight && backdrop.width === pixelWidth && backdrop.height === pixelHeight) return;
+    canvas.width = pixelWidth; canvas.height = pixelHeight; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cacheScenery(dpr);
     render();
   }
-  let hudElapsed = 0;
+  let hudElapsed = 0, accumulator = 0, lastDraw = 0, drawnState, animationId;
+  const tick = 1 / 120;
   function frame(timestamp) {
-    const dt = Math.min(0.05, lastTime ? (timestamp - lastTime) / 1000 : 0); lastTime = timestamp;
+    if (document.hidden) { lastTime = 0; animationId = 0; return; }
+    const dt = Math.min(0.1, lastTime ? (timestamp - lastTime) / 1000 : 0); lastTime = timestamp;
     if (game.state !== 'paused' && game.state !== 'over') ambient += dt;
     if (game.state === 'running') {
-      game.update(dt); for (const event of game.events) if (['coin', 'crash'].includes(event)) sound(event);
-      hudElapsed += dt; if (hudElapsed > 0.08 || game.state === 'over') { updateHUD(); hudElapsed = 0; }
+      accumulator = Math.min(0.1, accumulator + dt);
+      while (accumulator >= tick && game.state === 'running') {
+        game.update(tick); accumulator -= tick;
+        for (const event of game.events) if (event === 'coin' || event === 'crash') sound(event);
+      }
+      hudElapsed += dt; if (hudElapsed >= 0.1 || game.state === 'over') { updateHUD(); hudElapsed = 0; }
       if (game.state === 'over') finishRun();
     }
-    render(); requestAnimationFrame(frame);
+    if (game.state === 'running' || drawnState !== game.state || (game.state === 'ready' && timestamp - lastDraw >= 1000 / 30)) {
+      render(); lastDraw = timestamp; drawnState = game.state;
+    }
+    animationId = requestAnimationFrame(frame);
   }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(animationId); animationId = 0; lastTime = 0; }
+    else if (!animationId) { lastTime = 0; animationId = requestAnimationFrame(frame); }
+  });
   $('header-best').textContent = format(best); setColor(runnerColor); updateSoundButton();
-  new ResizeObserver(resize).observe(canvas); resize(); requestAnimationFrame(frame);
+  $('start-hint').textContent = isTouch() ? 'Swipe to move · up to jump · down to slide' : 'or press SPACE to start';
+  NeonAudio.setEnabled(soundEnabled);
+  new ResizeObserver(resize).observe(canvas); resize(); animationId = requestAnimationFrame(frame);
 })();

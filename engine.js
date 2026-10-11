@@ -13,17 +13,27 @@
       this.state = 'ready'; this.lane = 1; this.visualLane = 1; this.distance = 0;
       this.coins = 0; this.speed = this.config.start; this.time = 0;
       this.jumpTime = 0; this.slideTime = 0; this.jumpHeight = 0;
+      this.jumpQueued = 0;
       this.objects = []; this.spawnDistance = 0; this.events = [];
     }
     start(mode = this.mode) { this.reset(mode); this.state = 'running'; this.spawnRow(120); }
     action(action) {
-      if (this.state !== 'running') return;
-      if (action === 'left') this.lane = Math.max(0, this.lane - 1);
-      if (action === 'right') this.lane = Math.min(2, this.lane + 1);
-      if (action === 'jump' && this.jumpTime === 0) {
-        this.jumpTime = 0.92; this.slideTime = 0; this.events.push('jump');
+      if (this.state !== 'running') return false;
+      if (action === 'left' || action === 'right') {
+        const next = Math.max(0, Math.min(2, this.lane + (action === 'left' ? -1 : 1)));
+        if (next === this.lane) return false;
+        this.lane = next; return true;
       }
-      if (action === 'slide' && this.jumpTime === 0) { this.slideTime = 0.85; this.events.push('slide'); }
+      if (action === 'jump' && this.jumpTime === 0) {
+        this.jumpTime = 0.92; this.slideTime = 0; this.events.push('jump'); return true;
+      }
+      if (action === 'jump' && this.jumpTime <= 0.14) { this.jumpQueued = 0.14; return true; }
+      // Swiping down while airborne lands immediately and ducks under a gate.
+      if (action === 'slide') {
+        this.jumpTime = 0; this.jumpHeight = 0; this.jumpQueued = 0;
+        this.slideTime = 0.85; this.events.push('slide'); return true;
+      }
+      return false;
     }
     pause() { if (this.state === 'running') this.state = 'paused'; }
     resume() { if (this.state === 'paused') this.state = 'running'; }
@@ -37,16 +47,20 @@
         this.objects.push({ lane: 3 - safe - blocked, z, type: kinds[Math.floor(this.random() * 3)], checked: false });
       }
       for (let i = 0; i < 6; i++) this.objects.push({ lane: safe, z: z + 4 + i * 4.6, type: 'coin', collected: false });
+      // Every object travels equally, so depth order only changes on spawn.
+      this.objects.sort((a, b) => b.z - a.z);
     }
     update(dt) {
-      this.events = [];
+      this.events.length = 0;
       if (this.state !== 'running') return;
       dt = Math.min(0.05, Math.max(0, dt));
       this.time += dt; this.speed = Math.min(this.config.max, this.config.start + this.time * this.config.acceleration);
       const travel = this.speed * dt; this.distance += travel; this.spawnDistance += travel;
-      this.visualLane += (this.lane - this.visualLane) * Math.min(1, dt * 16);
+      this.visualLane += (this.lane - this.visualLane) * (1 - Math.exp(-dt * 24));
       this.jumpTime = Math.max(0, this.jumpTime - dt);
       this.slideTime = Math.max(0, this.slideTime - dt);
+      if (this.jumpQueued > 0 && this.jumpTime === 0) { this.jumpQueued = 0; this.action('jump'); }
+      else this.jumpQueued = Math.max(0, this.jumpQueued - dt);
       this.jumpHeight = this.jumpTime ? Math.sin((1 - this.jumpTime / 0.92) * Math.PI) * 1.7 : 0;
       if (this.spawnDistance >= this.config.spacing) { this.spawnDistance -= this.config.spacing; this.spawnRow(); }
       for (const object of this.objects) {
@@ -67,7 +81,11 @@
         }
         if (this.state === 'over') break;
       }
-      this.objects = this.objects.filter(o => o.type === 'train' ? o.z > -18 : o.z > -5);
+      let retained = 0;
+      for (const object of this.objects) {
+        if (!object.collected && (object.type === 'train' ? object.z > -18 : object.z > -5)) this.objects[retained++] = object;
+      }
+      this.objects.length = retained;
     }
     crash() { if (this.state === 'running') { this.state = 'over'; this.events.push('crash'); } }
     get score() { return Math.floor(this.distance) + this.coins * 20; }

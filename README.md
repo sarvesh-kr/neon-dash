@@ -48,16 +48,16 @@ git push -u origin main
 
 | Action | Keyboard | Mobile |
 | --- | --- | --- |
-| Move left / right | Left / right arrows or A / D | Swipe left / right or tap arrows |
-| Jump a striped barrier | Up arrow, W, or Space | Swipe up or tap up |
-| Slide under a pink gate | Down arrow or S | Swipe down or tap down |
+| Move left / right | Left / right arrows or A / D | Swipe left / right |
+| Jump a striped barrier | Up arrow, W, or Space | Swipe up |
+| Slide under a pink gate | Down arrow or S | Swipe down |
 | Pause / resume | P or Escape | Pause button |
 | Start / restart | Space or the green button | Green button |
 | Enter / exit fullscreen | F or the corners button | Corners button |
 
 Trains must be dodged by switching lanes. Jumping will not clear a train. The game pauses automatically when you leave the tab or window.
 
-Tap the corners button at the top right of the game to fill the screen. Fullscreen adapts to a phone’s portrait display or a desktop’s landscape display, with the score, pause, exit, and touch controls kept visible. On supported devices it requests a portrait orientation lock for phones and landscape for desktops. Browsers that cannot lock orientation still adapt to the device’s current orientation.
+Every visit opens directly in the expanded game view. Tap **LET’S RUN** to start; that gesture also requests native device fullscreen where supported. The score, music toggle, pause, and exit controls stay visible. Native fullscreen requests portrait orientation for phones and landscape for desktops where orientation locking is available. Other browsers adapt to the current orientation. Tap the corners button to return to the page and change difficulty or runner color.
 
 Native fullscreen hides browser controls where supported. On iPhone Safari and other browsers without element fullscreen, the game fills the browser viewport instead; browser chrome may remain visible. Tap the corners button again or press F to return to the page. Escape exits fullscreen, and pauses the game when outside fullscreen.
 
@@ -74,9 +74,11 @@ Home Screen launches automatically fill the app window. The manifest requests fu
 - Coin collection and two goals per run: 25 coins and 1,000 meters.
 - Score equals whole meters traveled plus 20 points per coin.
 - Best score, runner color, and sound preference saved in this browser’s local storage.
-- Three runner colors and optional synthesized sound effects. Sound starts muted.
-- Responsive layout, touch gestures, mobile buttons, keyboard controls, and instructions.
-- Fullscreen play with phone/desktop orientation support and an expanded-view fallback.
+- Three runner colors, an original looping synthesized soundtrack, and louder sound effects. Sound defaults to enabled, starts after the first user gesture, and respects a saved mute preference. Music stops while paused, after a crash, or when the page is hidden.
+- Responsive layout, immediate swipe gestures without on-screen navigation arrows, keyboard controls, and instructions.
+- Direct expanded game launch, native fullscreen from Play, and Home Screen app support.
+- Fixed 120 Hz simulation, consistent fast lane changes, a short landing jump buffer, and an airborne downward swipe that lands into a slide.
+- Cached scenery and gradients, object sorting only on spawn, reduced distant detail, a bounded canvas resolution, and suspended drawing when paused or hidden.
 - Original procedural artwork. No third-party assets, fonts, APIs, or tracking.
 
 Saved scores are specific to the browser and origin. If browser storage is blocked, the game still works but preferences and scores cannot persist. This is a single-player game with local scores; it does not include an online leaderboard.
@@ -89,6 +91,7 @@ Saved scores are specific to the browser and origin. If browser storage is block
 | `styles.css` | Responsive layout and visual design |
 | `engine.js` | Game simulation, obstacle generation, and collision detection |
 | `game.js` | Canvas rendering, input, audio, and browser storage |
+| `audio.js` | Original looping music, effects, and audio lifecycle |
 | `fullscreen.js` | Fullscreen, orientation requests, and viewport fallback |
 | `manifest.webmanifest` | Home Screen launch mode and app metadata |
 | `icons/` | Home Screen and app icons |
@@ -105,9 +108,11 @@ With Node.js installed, run:
 node tests/engine.test.cjs
 node --check engine.js
 node --check game.js
+node --check audio.js
+node --check fullscreen.js
 ```
 
-The tests cover train collisions and lane changes, jumping barriers, sliding gates, coin scoring, pause/resume, movement bounds, speed caps, and safe obstacle generation. Desktop and mobile layouts and the main UI flows were also checked in headless Chromium.
+The tests cover train collisions and lane changes, jumping barriers, sliding gates, coin scoring, pause/resume, movement bounds, speed caps, safe obstacle generation, frame-independent lane movement, landing jump buffering, airborne slides, and object depth order. Headless Chromium checks cover direct launch, real touch swipes before release, fixed simulation ticks, music scheduling and mute/pause behavior, collision/restart, mobile rotation, and desktop layout. Native fullscreen success events are simulated because headless Chromium cannot enter OS fullscreen; physical iOS Home Screen launches still need device verification.
 
 ## License
 
