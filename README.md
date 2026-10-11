@@ -61,6 +61,12 @@ Tap the corners button at the top right of the game to fill the screen. Fullscre
 
 Native fullscreen hides browser controls where supported. On iPhone Safari and other browsers without element fullscreen, the game fills the browser viewport instead; browser chrome may remain visible. Tap the corners button again or press F to return to the page. Escape exits fullscreen, and pauses the game when outside fullscreen.
 
+### Launch without browser bars
+
+On iPhone or iPad, open the site in **Safari → Share → Add to Home Screen**, leave **Open as Web App** enabled if shown, and tap **Add**. Launch the new **Neon Dash** icon. On Android, use **Chrome or Brave → menu → Install app / Add to Home screen**, then launch that icon. An existing shortcut created before this update may need to be removed and added again.
+
+Home Screen launches automatically fill the app window. The manifest requests fullscreen; iOS uses its standalone web app mode. Browser tabs and the address bar are removed, while device status and gesture indicators remain under OS control. The corners button returns to the page to change settings. The game still needs internet to load; offline caching is not enabled. Best scores may be separate from the regular browser, depending on platform storage behavior.
+
 ## Features
 
 - Three difficulty modes: Chill, Classic, and Rush, each with increasing speed and different obstacle spacing.
@@ -84,6 +90,8 @@ Saved scores are specific to the browser and origin. If browser storage is block
 | `engine.js` | Game simulation, obstacle generation, and collision detection |
 | `game.js` | Canvas rendering, input, audio, and browser storage |
 | `fullscreen.js` | Fullscreen, orientation requests, and viewport fallback |
+| `manifest.webmanifest` | Home Screen launch mode and app metadata |
+| `icons/` | Home Screen and app icons |
 | `favicon.svg` | Original lightning icon |
 | `tests/engine.test.cjs` | Simulation regression tests |
 

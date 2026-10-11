@@ -106,6 +106,7 @@
   }));
   function openDialog(id) { if (game.state === 'running') togglePause(); $(id).showModal(); }
   $('help-button').addEventListener('click', () => openDialog('help-dialog'));
+  $('home-screen-button').addEventListener('click', () => openDialog('home-screen-dialog'));
   $('style-button').addEventListener('click', () => openDialog('style-dialog'));
   document.querySelectorAll('dialog').forEach(dialog => {
     dialog.querySelector('.dialog-close').addEventListener('click', () => dialog.close());

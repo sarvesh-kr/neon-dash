@@ -86,4 +86,16 @@
       event.preventDefault(); event.stopImmediatePropagation(); wanted = false;
     }
   }, true);
+
+  // Home Screen apps already have their browser controls removed by the OS.
+  // Fill that app window immediately; requesting native fullscreen on load
+  // would fail because it requires a user gesture.
+  const appLaunch = navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches;
+  if (appLaunch) {
+    document.body.classList.add('home-screen-app');
+    frame.classList.add('expanded');
+    sync();
+  }
 })();

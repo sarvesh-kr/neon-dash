@@ -4,13 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#10101b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Neon Dash">
   <meta name="description" content="Hit the neon streets. A free browser endless runner with trains, coins, and one more run.">
   <title>Neon Dash — Keep moving.</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="stylesheet" href="./styles.css?v=fullscreen-1">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css?v=home-screen-1">
   <script src="./engine.js" defer></script>
-  <script src="./fullscreen.js" defer></script>
-  <script src="./game.js?v=fullscreen-1" defer></script>
+  <script src="./fullscreen.js?v=home-screen-1" defer></script>
+  <script src="./game.js?v=home-screen-1" defer></script>
 </head>
 <body>
   <div class="app">
@@ -53,11 +58,13 @@
       </div>
 
       <div class="control-strip"><div><span class="control-label">MAKE YOUR MOVE</span><span class="control-group"><kbd>←</kbd><kbd>→</kbd> Switch lanes</span><span class="control-group"><kbd>↑</kbd><kbd>SPACE</kbd> Jump</span><span class="control-group"><kbd>↓</kbd> Slide</span><span class="control-group"><kbd>P</kbd> Pause</span></div><span class="swipe-hint"><kbd>F</kbd> Fullscreen · Swipe on mobile</span></div>
+      <div class="install-note"><span>Play without browser tabs or the address bar.</span><button class="text-button" id="home-screen-button">Add to Home Screen <span>↗</span></button></div>
     </main>
     <footer><span>BUILT FOR THE <b>ONE-MORE-TRY</b> CROWD.</span><span>STAY QUICK. STAY CURIOUS. <i>↗</i></span></footer>
   </div>
 
   <dialog id="help-dialog"><button class="dialog-close" aria-label="Close instructions">×</button><p class="eyebrow">WELCOME TO THE NIGHT SHIFT</p><h2>The streets are yours.</h2><p>Run as far as you can. Collect gold coins and keep clear of the midnight traffic.</p><div class="help-row"><kbd>← →</kbd><span><strong>Switch lanes</strong>Move around trains and obstacles.</span></div><div class="help-row"><kbd>↑ / SPACE</kbd><span><strong>Jump</strong>Clear the low striped barriers.</span></div><div class="help-row"><kbd>↓</kbd><span><strong>Slide</strong>Duck under glowing overhead gates.</span></div><div class="help-row"><kbd>P / ESC</kbd><span><strong>Pause</strong>Take a breath. The city can wait.</span></div><div class="help-row"><kbd>F</kbd><span><strong>Fullscreen</strong>Fill the screen. Tap the corners icon or press F to return.</span></div><p class="dialog-note">On a phone, swipe in any direction or use the arrow buttons. Your best score saves on this device. Score = distance + 20 per coin.</p><button class="play-button dialog-done">GOT IT <span>↗</span></button></dialog>
   <dialog id="style-dialog"><button class="dialog-close" aria-label="Close runner colors">×</button><p class="eyebrow">A LITTLE SELF EXPRESSION</p><h2>Find your glow.</h2><p>Same moves. Your colors.</p><div class="color-options"><button data-color="mint" class="color-option selected" aria-pressed="true"><span style="--swatch:#72f3cb"></span>Night Shift</button><button data-color="pink" class="color-option" aria-pressed="false"><span style="--swatch:#ff7baf"></span>Pink Noise</button><button data-color="blue" class="color-option" aria-pressed="false"><span style="--swatch:#88acff"></span>Blue Hour</button></div></dialog>
+  <dialog id="home-screen-dialog"><button class="dialog-close" aria-label="Close Home Screen instructions">×</button><p class="eyebrow">MORE GAME. LESS BROWSER.</p><h2>Your own arcade.</h2><p>Open Neon Dash from your Home Screen to play without browser tabs or the address bar. The game opens in the expanded view automatically.</p><h3>iPhone or iPad</h3><ol><li>Open this site in <strong>Safari</strong>.</li><li>Tap <strong>Share → Add to Home Screen</strong>. Keep <strong>Open as Web App</strong> on if shown, then tap <strong>Add</strong>.</li><li>Launch <strong>Neon Dash</strong> from its new Home Screen icon.</li></ol><h3>Android</h3><ol><li>Open this site in <strong>Chrome or Brave</strong>.</li><li>Open the browser menu and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li><li>Launch the new <strong>Neon Dash</strong> icon.</li></ol><p class="dialog-note">Device status and gesture indicators may remain visible. The corners button returns to the game settings. An internet connection is needed to load the game.</p></dialog>
 </body>
 </html>
