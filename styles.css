@@ -1496,3 +1496,56 @@ dialog {
     font-size: 7px;
   }
 }
+
+/* Readable game details in the settings view; no work in the render loop. */
+.game-guide {
+  margin: 36px 0;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+.game-guide h2 {
+  margin: 0 0 14px;
+  font-size: clamp(22px, 3vw, 30px);
+  letter-spacing: -0.7px;
+}
+.game-guide h3 {
+  margin: 22px 0 10px;
+  font-size: 17px;
+}
+.game-guide p,
+.no-script-note {
+  max-width: 80ch;
+  color: #b2b2bf;
+  font-size: 14px;
+  line-height: 1.75;
+}
+.guide-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+.game-guide details {
+  border-top: 1px solid var(--line);
+  padding: 15px 0;
+}
+.game-guide summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.game-guide summary:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 5px;
+}
+@media (max-width: 660px) {
+  .game-guide {
+    padding: 20px;
+  }
+  .guide-columns {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

@@ -1,0 +1,22 @@
+/* Preserve readable content when scripting is unavailable. */
+body.game-view-expanded {
+  overflow: auto;
+}
+.game-frame.expanded {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  width: 100%;
+  height: 480px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.game-tools,
+.mode-options,
+#style-button,
+#help-button,
+#home-screen-button,
+#play-button,
+.start-hint {
+  display: none;
+}

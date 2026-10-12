@@ -31,7 +31,7 @@ All asset paths are relative, so both project Pages and user Pages work. `.nojek
 
 The live deployment uses `nd.sarvesh.si`, recorded in `CNAME`. At the DNS provider for `sarvesh.si`, set a **CNAME** record named **nd** with target **sarvesh-kr.github.io** (no protocol or repository path). After DNS resolves and GitHub provisions the certificate, enable **Enforce HTTPS** in the repository’s Pages settings.
 
-When reusing this project for a different repository or domain, remove or replace `CNAME` and update the play link above.
+When reusing this project for a different repository or domain, replace `CNAME` and update the play link, canonical URL, social metadata, structured-data URLs, `robots.txt`, and `sitemap.xml` for your domain. The verification script checks their consistency with `CNAME`.
 
 If you prefer Git:
 
@@ -144,6 +144,8 @@ Stored colors and difficulty values accept only known own properties, and invali
 | `effects.js` | Fixed-size pool for gameplay particles |
 | `fullscreen.js` | Fullscreen, orientation requests, and viewport fallback |
 | `manifest.webmanifest` | Home Screen launch mode and app metadata |
+| `robots.txt`, `sitemap.xml` | Crawl access and canonical page discovery |
+| `noscript.css` | Readable page and instructions when JavaScript is disabled |
 | `icons/` | Toy runner mascot, browser favicons, and Home Screen icons |
 | `tests/engine.test.cjs` | Simulation regression tests |
 | `tests/input.test.cjs` | Gesture thresholds, direction locking, and contact ownership |
@@ -163,7 +165,7 @@ With Node.js 24 installed, run the release checks from the repository root:
 node scripts/check.mjs
 ```
 
-The same command runs automatically on pushes to `main` and pull requests. The workflow uses pinned action revisions, read-only repository permissions, and no project secrets or dependencies. It checks JavaScript syntax, same-origin asset paths under a GitHub Pages project URL, unique element IDs, manifest icon dimensions, and the restrictive Content Security Policy.
+The same command runs automatically on pushes to `main` and pull requests. SEO checks also validate the canonical origin, metadata, share-image dimensions, structured-data markers, and crawler assets. The workflow uses pinned action revisions, read-only repository permissions, and no project secrets or dependencies. It checks JavaScript syntax, same-origin asset paths under a GitHub Pages project URL, unique element IDs, manifest icon dimensions, and the restrictive Content Security Policy.
 
 The 66 unit tests include 43 simulation tests, eight gesture tests, eight audio tests, six storage tests, and one particle test. Simulation coverage includes collisions, movement, coin scoring, pause/resume, difficulty, safe obstacle generation, buffered jumps, airborne slides, depth order, shield protection, magnet collection, pickup expiry/reset, cargo crates, and the opening trail. They also cover late lane-entry collisions, slides expiring inside gates, clear counting, invalid modes/time steps, 30-minute simulated runs in every difficulty, 1,000 restarts reusing the same buffers, recycling flags, and pool saturation. Contact regressions check individual obstacle edges/heights, swept diagonal crossings, disjoint movement paths, gate posts, passed tails, train clipping-plane lifecycle, airborne pickups, chronological shield collection, no post-crash rewards, portrait core clearance, impact-position freezing, and expiry during contact. Gesture tests cover four directions, CSS-pixel thresholds, hold jitter, diagonal deferral/release, one action per contact, extra fingers, cancellation, and invalid coordinates. Storage coverage includes 10,000 changing saves without new keys, unchanged-value write deduplication, valid preference preservation, corrupt/oversized value repair, invalid input rejection, and blocked/quota-failed persistence. Particles verify their targets remain independent of recycled drawing points. Audio tests cover unavailable APIs, partial initialization cleanup, runtime device failures and explicit recovery, the 32-voice limit, ended-node disposal, pause/hide handling, unmuting before suspension settles, and unknown effect names.
 
@@ -185,6 +187,16 @@ Direct Chromium profiling of the earlier cached-lighting update compared the sam
 The contact update was also checked in a clean preview: mean frame callbacks were 0.81 ms on the phone layout and 0.70 ms on desktop (95th percentiles 1.8 ms and 1.1 ms). The production audit measured 1.05 ms mean / 2.9 ms 95th percentile on the phone layout and 1.70 ms / 6.2 ms on desktop. Runs varied under the shared test environment, so these measurements are runtime checks rather than a guaranteed performance improvement.
 
 These are local headless measurements with a 1.8-million-pixel canvas budget, not guarantees for physical devices or total frame/GPU execution times. Native fullscreen success events are simulated because headless Chromium cannot enter OS fullscreen; physical iOS Home Screen launches still need device verification.
+
+## Search and sharing
+
+The homepage targets the game name and free browser endless-runner searches with a descriptive title, description, primary heading, and player-facing instructions. The canonical URL is `https://nd.sarvesh.si/`, including when the page opens with a Home Screen launch parameter or via its GitHub Pages address. The sitemap lists this single public page; it does not list assets, duplicate query URLs, or fabricated pages. Its `lastmod` should change only when the page's content changes.
+
+`robots.txt` permits crawling and advertises the sitemap. The page includes `WebSite` and `VideoGame` microdata in its initial HTML. Microdata preserves the restrictive script policy and describes the actual game; there are no invented reviews, ratings, or guarantees of rich results. Controls, difficulty descriptions, and frequently asked questions are readable in the settings view after exiting the expanded game. With JavaScript disabled, a small fallback stylesheet restores normal scrolling and makes the game information accessible.
+
+Open Graph and Twitter card metadata reference a 1200×630 PNG preview made from the original mascot and actual game rendering. This image is for link previews and is not downloaded by normal gameplay. Runtime code and resource budgets are unchanged.
+
+After publication, a verified owner can submit `https://nd.sarvesh.si/sitemap.xml` in [Google Search Console](https://search.google.com/search-console/) and Bing Webmaster Tools, then monitor indexing and search queries. Search Console verification/submission is not configured in this repository; do not invent verification tokens or include credentials in public files. Sitemaps and metadata help discovery, but search engines decide indexing, ranking, snippets, and recrawl timing.
 
 ## License
 

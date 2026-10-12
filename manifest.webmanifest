@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Neon Dash",
   "short_name": "Neon Dash",
-  "description": "Dodge trains, chase coins, and own the neon streets.",
+  "description": "A free browser endless runner. Dodge trains, jump obstacles, and collect coins on mobile or desktop.",
   "start_url": "./?launch=app",
   "scope": "./",
   "display": "fullscreen",

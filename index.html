@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-  <head>
+  <head itemscope itemtype="https://schema.org/WebSite">
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
@@ -14,14 +14,46 @@
     <meta name="apple-mobile-web-app-title" content="Neon Dash" />
     <meta
       name="description"
-      content="Hit the neon streets. A free browser endless runner with trains, coins, and one more run."
+      content="Play Neon Dash, a free 3D-style endless runner in your browser. Dodge trains, jump obstacles, and collect coins on mobile or desktop. No download needed."
     />
-    <title>Neon Dash — Keep moving.</title>
+    <title>Neon Dash — Free Endless Runner Game Online</title>
+    <meta itemprop="name" content="Neon Dash" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" itemprop="url" href="https://nd.sarvesh.si/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Neon Dash" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="Neon Dash — Free Endless Runner Game Online" />
+    <meta
+      property="og:description"
+      content="Dodge trains. Chase coins. Beat your best. Play this free neon endless runner on mobile or desktop — no download or account needed."
+    />
+    <meta property="og:url" content="https://nd.sarvesh.si/" />
+    <meta property="og:image" content="https://nd.sarvesh.si/icons/neon-dash-social.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Neon Dash's toy runner mascot beside the neon city and three-lane running track."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Neon Dash — Free Endless Runner Game Online" />
+    <meta
+      name="twitter:description"
+      content="Dodge trains. Chase coins. Beat your best. A free browser runner for mobile and desktop. No download or account needed."
+    />
+    <meta name="twitter:image" content="https://nd.sarvesh.si/icons/neon-dash-social.png" />
+    <meta
+      name="twitter:image:alt"
+      content="Neon Dash's toy runner mascot beside the neon city and three-lane running track."
+    />
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/runner-32.png" />
     <link rel="icon" type="image/png" sizes="64x64" href="./icons/runner-64.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/runner-apple-touch.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=production-1" />
+    <link rel="stylesheet" href="./styles.css?v=seo-1" />
+    <noscript><link rel="stylesheet" href="./noscript.css?v=seo-1" /></noscript>
     <script src="./engine.js?v=production-1" defer></script>
     <script src="./audio.js?v=production-1" defer></script>
     <script src="./fullscreen.js?v=production-1" defer></script>
@@ -45,12 +77,21 @@
         </nav>
       </header>
 
-      <main>
+      <main itemscope itemtype="https://schema.org/VideoGame" itemid="https://nd.sarvesh.si/#game">
+        <meta itemprop="url" content="https://nd.sarvesh.si/" />
+        <meta itemprop="image" content="https://nd.sarvesh.si/icons/neon-dash-social.png" />
+        <meta itemprop="isAccessibleForFree" content="true" />
+        <meta itemprop="inLanguage" content="en" />
+        <meta itemprop="gamePlatform" content="Web browser" />
+        <meta itemprop="genre" content="Endless runner" />
+        <meta itemprop="playMode" content="https://schema.org/SinglePlayer" />
         <div class="intro">
           <div>
             <p class="eyebrow"><span></span> THE CITY NEVER STOPS. NEITHER DO YOU.</p>
-            <h1>One more <em>run.</em></h1>
-            <p class="intro-copy">Dodge the rush. Chase the glow. Beat your best.</p>
+            <h1><span itemprop="name">Neon Dash</span>.<br /><em>One more run.</em></h1>
+            <p class="intro-copy">
+              A free endless runner game. Play online, on your phone or desktop.
+            </p>
           </div>
           <div class="personal-best">
             <span class="trophy">♜</span>
@@ -138,9 +179,9 @@
                 alt="Neon Dash toy runner mascot"
                 fetchpriority="high"
               />
-              <div class="title-badge">NO FINISH LINE. JUST YOU.</div>
+              <div class="title-badge">NEON DASH · FREE ENDLESS RUNNER</div>
               <h2 id="overlay-title">OWN THE<br /><span>NIGHT.</span></h2>
-              <p id="overlay-copy">Dodge the rush. Find your flow. Grab a boost.</p>
+              <p id="overlay-copy">Dodge trains. Chase coins. Own the neon streets.</p>
               <div class="run-results" id="run-results" hidden>
                 <div><span>DISTANCE</span><strong id="result-distance">0 m</strong></div>
                 <div><span>COINS</span><strong id="result-coins">0</strong></div>
@@ -153,6 +194,7 @@
                 ><span class="button-arrow" aria-hidden="true">↗</span>
               </button>
               <span class="start-hint" id="start-hint">or press <kbd>SPACE</kbd> to start</span>
+              <noscript><p>Enable JavaScript in your browser to play Neon Dash.</p></noscript>
               <div class="boost-guide" id="boost-guide">
                 <span><i class="shield-dot"></i> Shield blocks a hit</span
                 ><span><i class="magnet-dot"></i> Magnet pulls coins</span>
@@ -241,6 +283,73 @@
             Add to Home Screen <span>↗</span>
           </button>
         </div>
+        <section class="game-guide" aria-labelledby="about-title">
+          <p class="eyebrow">MEET YOUR NEXT HIGH SCORE</p>
+          <h2 id="about-title">A free endless runner. A city that never stops.</h2>
+          <p itemprop="description">
+            Neon Dash is a free, single-player endless runner game you play directly in your
+            browser. Switch between three lanes, dodge trains, jump barriers and cargo crates, and
+            slide under glowing gates. Collect coins, catch a shield or magnet, and chase your
+            personal best in a neon city. No download, account, or payment is needed.
+          </p>
+          <div class="guide-columns">
+            <section aria-labelledby="controls-title">
+              <h3 id="controls-title">How to play Neon Dash</h3>
+              <p>
+                On mobile, swipe left or right to switch lanes, up to jump, and down to slide. On
+                desktop, use the arrow keys or W, A, S, and D; Space also jumps. Dodge trains by
+                changing lanes — they are too tall to jump. Pause with P or the pause button.
+              </p>
+              <p>
+                Your score is the distance you run plus 20 points per coin. Blue magnets attract
+                coins for 10 seconds, and mint shields block one hit for up to 12 seconds.
+              </p>
+            </section>
+            <section aria-labelledby="modes-title">
+              <h3 id="modes-title">Choose your pace</h3>
+              <p>
+                Start with Chill for more room, choose Classic for the original rush, or try Rush
+                for a faster challenge. Speed increases as you travel, up to each mode's limit. Run
+                through Midnight District, Violet Market, and Harbor Run as the city changes every
+                750 meters.
+              </p>
+              <p>
+                Use the corners button to leave the expanded game view and change difficulty or
+                runner color. Play in portrait or landscape; supported browsers offer native
+                fullscreen.
+              </p>
+            </section>
+          </div>
+          <h3>Common questions</h3>
+          <details>
+            <summary>Can I play on a phone or computer?</summary>
+            <p>
+              Yes. Neon Dash supports touch swipes on phones and tablets, and keyboard controls on
+              computers with a modern browser.
+            </p>
+          </details>
+          <details>
+            <summary>Does Neon Dash work offline?</summary>
+            <p>
+              An internet connection is needed to load the game. You can add it to your Home Screen
+              for a browser-bar-free launch, but offline loading is not supported.
+            </p>
+          </details>
+          <details>
+            <summary>Where is my best score saved?</summary>
+            <p>
+              Your best score, runner color, and sound preference are stored locally in this browser
+              when storage is available. Scores are specific to the browser and device; they do not
+              sync to an account.
+            </p>
+          </details>
+        </section>
+        <noscript>
+          <p class="no-script-note">
+            Neon Dash needs JavaScript to run. Enable JavaScript in your browser to play this free
+            endless runner.
+          </p>
+        </noscript>
       </main>
       <footer>
         <span>BUILT FOR THE <b>ONE-MORE-TRY</b> CROWD.</span
