@@ -5,12 +5,12 @@
     ink: 0x15263d,
     navy: 0x263e61,
     denim: 0x29486e,
-    stitch: 0x8ea8bf,
-    white: 0xf9f7ec,
-    sole: 0xdee7e6,
+    stitch: 0x6c8ba0,
+    white: 0xb9cad0,
+    sole: 0x869ba7,
     skin: 0xffcf4e,
     skinShade: 0xe9a62f,
-    silver: 0xc5d4dd,
+    silver: 0x718e9e,
     cyan: 0x75dceb,
     rubber: 0x344659,
   };
@@ -148,11 +148,11 @@
     seam(frame, x1, y1, z1, x2, y2, z2, width, color) {
       const a = frame.point(x1, y1, z1, this.joints[10]),
         b = frame.point(x2, y2, z2, this.joints[11]);
-      this.renderer.limb(a[0], a[1], a[2], b[0], b[1], b[2], width, color);
+      this.renderer.limb(a[0], a[1], a[2], b[0], b[1], b[2], width, color, 5);
       this.pose.parts++;
     }
     limb(a, b, width, color) {
-      this.renderer.limb(a[0], a[1], a[2], b[0], b[1], b[2], width, color);
+      this.renderer.limb(a[0], a[1], a[2], b[0], b[1], b[2], width, color, 5);
       this.pose.parts++;
     }
     draw(game, lane, jump, reducedMotion, impact) {
@@ -207,9 +207,9 @@
         0,
       );
       // Pelvis, belt, jeans pockets and stitched outside seams.
-      this.part(b, 3, 0, 0, 0, 0.33, 0.19, 0.29, C.denim, 0.2, 0, 8);
-      this.part(b, 3, 0, 0.055, -0.154, 0.29, 0.036, 0.024, C.ink, 0.15);
-      this.part(b, 0, 0.09, 0.055, -0.174, 0.04, 0.036, 0.014, C.silver, 0.9);
+      this.part(b, 7, 0, 0.045, 0, 0.3, 0.28, 0.265, C.denim, 0.2, 0, 8);
+      this.part(b, 7, 0, 0.16, -0.11, 0.25, 0.024, 0.024, C.ink, 0.15);
+      this.part(b, 0, 0.08, 0.16, -0.135, 0.04, 0.036, 0.014, C.silver, 0.9);
       for (let i = 0; i < 2; i++) {
         const side = SIDES[i],
           angle = phase + (i ? Math.PI : 0),
@@ -232,7 +232,8 @@
         if (!jump) ankle[1] = crouch >= 0.05 ? 0.092 + lift * 0.16 : Math.max(0.092, ankle[1]);
         this.limb(a, knee, 0.147, C.denim);
         this.limb(knee, ankle, 0.129, C.denim);
-        this.part(b, 3, side * 0.15, 0.025, -0.157, 0.09, 0.1, 0.018, C.navy, 0.1, 0, 8);
+        r.add(2, knee[0], knee[1], knee[2], 0.135, 0.135, 0.135, C.denim, 0, 0, 0, 1, 0.18);
+        this.part(b, 7, side * 0.085, 0.025, -0.113, 0.07, 0.09, 0.022, C.navy, 0.1, 0, 8);
         const seamA = this.joints[3],
           seamB = this.joints[4];
         seamA[0] = a[0] + side * 0.064;
@@ -268,6 +269,8 @@
         );
         this.limb(shoulder, elbow, 0.143, color);
         this.limb(elbow, hand, 0.122, color);
+        r.add(2, elbow[0], elbow[1], elbow[2], 0.128, 0.128, 0.128, color, 0, 0, 0, 1, 0.2);
+        r.add(2, shoulder[0], shoulder[1], shoulder[2], 0.16, 0.16, 0.16, color, 0, 0, 0, 1, 0.2);
         const cuff = this.hands[i].set(
           hand[0],
           hand[1] + 0.012,
@@ -276,7 +279,7 @@
           m.turn + lean * 0.2,
           side * 0.12,
         );
-        this.part(cuff, 3, 0, 0.01, 0, 0.129, 0.052, 0.129, C.ink, 0.15, 0, 8);
+        this.part(cuff, 5, 0, 0.01, 0, 0.129, 0.052, 0.129, C.ink, 0.15, 0, 8);
         this.part(cuff, 5, 0, -0.025, 0, 0.082, 0.04, 0.082, C.skin, 0.6);
         this.part(
           cuff,
@@ -302,14 +305,14 @@
         }
       }
       // Sculpted hoodie: two-tone lower band, hood, zipper, drawcords and pouch pockets.
-      this.part(b, 3, 0, chest, 0, 0.425, 0.425, 0.305, color, 0.38, 0, 8);
-      this.part(b, 3, 0, chest - 0.19, 0, 0.4, 0.055, 0.307, C.ink, 0.2, 0, 8);
-      this.part(b, 3, 0, chest + 0.155, 0.012, 0.35, 0.06, 0.32, C.navy, 0.3, 0, 8);
+      this.part(b, 7, 0, chest, 0, 0.39, 0.43, 0.295, color, 0.38, 0, 8);
+      this.part(b, 7, 0, chest - 0.18, 0, 0.345, 0.06, 0.277, C.ink, 0.2, 0, 8);
+      this.part(b, 7, 0, chest + 0.155, 0.012, 0.35, 0.06, 0.32, C.navy, 0.3, 0, 8);
       this.part(b, 4, 0, chest + 0.21, -0.082, 0.35, 0.17, 0.3, color, 0.35, 0, 8);
       this.part(b, 0, 0, chest - 0.012, 0.158, 0.016, 0.34, 0.018, C.ink, 0.3);
       this.part(b, 0, 0, chest + 0.05, 0.173, 0.013, 0.04, 0.01, C.silver, 0.9);
       for (const side of SIDES) {
-        this.part(b, 3, side * 0.105, chest - 0.08, 0.155, 0.13, 0.09, 0.024, color, 0.18, 0, 8);
+        this.part(b, 7, side * 0.09, chest - 0.08, 0.139, 0.12, 0.08, 0.02, color, 0.18, 0, 8);
         this.seam(
           b,
           side * 0.07,
@@ -371,17 +374,14 @@
       // A layered technical backpack is the main visible surface during the run.
       const lag = Math.sin(phase * 2 - 0.65) * 0.008 * ground * cosmetic;
       const bag = this.bag.set(0, chest + lag, -0.225, -0.035 * stride * cosmetic, 0, 0, b);
-      this.part(bag, 3, 0, 0, 0, 0.305, 0.36, 0.16, C.ink, 0.25, 0, 8);
-      this.part(bag, 3, 0, 0.005, -0.083, 0.268, 0.315, 0.024, C.silver, 0.45);
-      this.part(bag, 3, 0, 0.005, -0.099, 0.25, 0.298, 0.024, color, 0.35, 0, 8);
-      this.part(bag, 3, 0, -0.089, -0.126, 0.227, 0.092, 0.036, C.navy, 0.22, 0, 8);
-      this.part(bag, 0, 0, -0.054, -0.148, 0.215, 0.012, 0.012, C.silver, 0.8);
-      this.part(bag, 0, 0.082, -0.064, -0.155, 0.015, 0.026, 0.012, C.silver, 0.85);
-      this.part(bag, 0, 0, 0.055, -0.122, 0.126, 0.105, 0.023, C.ink, 0.4, 0, 106);
-      this.part(bag, 0, 0, 0.055, -0.136, 0.1, 0.085, 0.012, C.cyan, 0.2, 0.08, 206);
-      this.part(bag, 4, 0, 0.188, 0.01, 0.115, 0.064, 0.09, C.ink, 0.3);
+      this.part(bag, 7, 0, 0, 0, 0.278, 0.325, 0.185, C.navy, 0.2, 0, 8);
+      this.part(bag, 7, 0, -0.07, -0.085, 0.217, 0.105, 0.08, C.ink, 0.18, 0, 8);
+      this.part(bag, 0, 0, -0.028, -0.124, 0.185, 0.008, 0.012, C.stitch, 0.25);
+      this.part(bag, 0, 0.066, -0.037, -0.13, 0.012, 0.02, 0.012, C.silver, 0.4);
+      this.part(bag, 0, 0, 0.063, -0.109, 0.08, 0.06, 0.01, C.navy, 0.2, 0, 106);
+      this.part(bag, 4, 0, 0.169, 0.009, 0.1, 0.052, 0.075, C.ink, 0.18);
       for (const side of SIDES) {
-        this.part(bag, 3, side * 0.157, -0.045, 0.005, 0.037, 0.15, 0.1, C.navy, 0.2, 0, 8);
+        this.part(bag, 7, side * 0.139, -0.045, 0.005, 0.035, 0.13, 0.09, C.navy, 0.2, 0, 8);
         this.part(bag, 0, side * 0.159, -0.053, -0.055, 0.035, 0.015, 0.012, color, 0.2);
         this.seam(bag, side * 0.118, 0.125, -0.115, side * 0.118, -0.035, -0.115, 0.007, C.stitch);
         this.seam(
@@ -477,8 +477,8 @@
       this.part(h, 3, 0, -0.016, 0.237, 0.126, 0.056, 0.02, C.skin, 0.55);
       this.part(h, 0, 0, -0.07, 0.238, 0.043, 0.012, 0.009, C.white, 0.6);
       this.part(h, 2, 0, 0.164, 0, 0.466, 0.155, 0.466, C.navy, 0.4);
-      this.part(h, 3, 0, 0.143, 0.138, 0.457, 0.048, 0.36, C.ink, 0.35);
-      this.part(h, 3, 0, 0.148, 0.236, 0.413, 0.033, 0.177, C.navy, 0.4);
+      this.part(h, 7, 0, 0.143, 0.138, 0.457, 0.048, 0.36, C.ink, 0.35);
+      this.part(h, 7, 0, 0.148, 0.236, 0.413, 0.033, 0.177, C.navy, 0.4);
       this.part(h, 0, 0, 0.201, 0.221, 0.119, 0.071, 0.025, color, 0.3, 0, 106);
       this.part(h, 5, 0, 0.243, 0, 0.042, 0.02, 0.042, color, 0.35);
       for (const side of SIDES) {
@@ -526,11 +526,11 @@
         }
     }
     shoe(f, color, side) {
-      this.part(f, 3, 0, 0, 0.025, 0.203, 0.106, 0.325, C.white, 0.22);
-      this.part(f, 3, 0, -0.047, 0.025, 0.211, 0.03, 0.333, C.sole, 0.1, 0, 9);
-      this.part(f, 3, 0, -0.064, 0.025, 0.212, 0.013, 0.333, C.rubber, 0.07, 0, 9);
-      this.part(f, 3, 0, 0.003, -0.096, 0.194, 0.073, 0.075, C.navy, 0.25, 0, 8);
-      this.part(f, 3, 0, 0.05, -0.013, 0.096, 0.023, 0.152, C.navy, 0.15, 0, 8);
+      this.part(f, 7, 0, 0, 0.025, 0.195, 0.106, 0.31, C.navy, 0.22);
+      this.part(f, 7, 0, -0.047, 0.025, 0.211, 0.03, 0.333, C.sole, 0.1, 0, 9);
+      this.part(f, 7, 0, -0.064, 0.025, 0.212, 0.013, 0.333, C.rubber, 0.07, 0, 9);
+      this.part(f, 7, 0, 0.003, -0.096, 0.194, 0.073, 0.075, C.navy, 0.25, 0, 8);
+      this.part(f, 7, 0, 0.05, -0.013, 0.096, 0.023, 0.152, C.navy, 0.15, 0, 8);
       this.part(f, 0, side * 0.103, 0.004, 0.035, 0.013, 0.025, 0.143, color, 0.3);
       this.part(f, 0, 0, -0.041, -0.146, 0.17, 0.024, 0.014, color, 0.25);
       for (let lace = 0; lace < 4; lace++)

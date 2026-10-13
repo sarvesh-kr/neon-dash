@@ -191,7 +191,7 @@ test('resize, quality changes, and repeated hide/restore reuse fixed instance bu
     r = h.renderer,
     buffers = r.batches.map((batch) => batch.data);
   assert.ok(r.active);
-  assert.equal(h.live.size, 50);
+  assert.equal(h.live.size, 53);
   for (let i = 0; i < 100; i++) {
     r.resize(i % 2 ? 390 : 1440, i % 2 ? 844 : 900);
     assert.ok(r.stats.pixels <= 1200000);
@@ -199,7 +199,7 @@ test('resize, quality changes, and repeated hide/restore reuse fixed instance bu
     assert.equal(h.live.size, 0);
     assert.equal(r.stats.pixels, 1);
     r.resize(390, 844);
-    assert.equal(h.live.size, 50);
+    assert.equal(h.live.size, 53);
   }
   for (let i = 0; i < buffers.length; i++) assert.equal(r.batches[i].data, buffers[i]);
   r.setQuality('detailed');
@@ -258,7 +258,7 @@ test('context recovery while hidden postpones GPU allocations until visible', ()
   assert.equal(r.released, true);
   h.document.hidden = false;
   r.resize(390, 844);
-  assert.equal(h.live.size, 50);
+  assert.equal(h.live.size, 53);
   assert.equal(r.active, true);
   assert.equal(h.canvas.hidden, false);
 });
@@ -270,7 +270,7 @@ test('a background launch waits for visibility before allocating GPU resources',
   assert.equal(h.renderer.stats.pixels, 1);
   h.document.hidden = false;
   h.renderer.resize(390, 844);
-  assert.equal(h.live.size, 50);
+  assert.equal(h.live.size, 53);
 });
 
 test('HDR targets and quality effects resize without growing the GPU handle pool', () => {
@@ -320,7 +320,7 @@ test('a driver rejecting a float framebuffer retries with LDR and retains 3D', (
   r.resize(390, 844);
   assert.ok(r.active);
   assert.equal(r.stats.hdr, false);
-  assert.equal(h.live.size, 50);
+  assert.equal(h.live.size, 53);
   r.release();
   assert.equal(h.live.size, 0);
 });
@@ -430,8 +430,8 @@ test('animated districts and detailed models reuse all buffers without overflow'
     if (i % 15 === 0) g.action(i % 30 ? 'slide' : 'jump');
     r.render(g, g.objects, g.visualLane, g.jumpHeight, g.time, '#72f3cb', i % 3, 0, false);
     assert.equal(r.stats.overflow, 0);
-    assert.equal(r.stats.resources, 50);
-    assert.ok(r.stats.drawCalls <= 19);
+    assert.equal(r.stats.resources, 53);
+    assert.ok(r.stats.drawCalls <= 21);
   }
   r.batches.forEach((b, i) => assert.equal(b.data, buffers[i]));
 });

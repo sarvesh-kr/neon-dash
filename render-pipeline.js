@@ -29,8 +29,8 @@
     void main() {
       vec3 color = texture(uImage,vUV).rgb;
       float light = max(color.r,max(color.g,color.b));
-      float threshold = mix(0.65,1.05,uHDR);
-      color *= smoothstep(threshold, threshold+0.6,light);
+      float threshold = mix(0.80,1.45,uHDR);
+      color *= smoothstep(threshold, threshold+0.8,light);
       outputColor = vec4(color,1.0);
     }`;
   const BLUR = `#version 300 es
@@ -51,7 +51,7 @@
     out vec4 outputColor;
     float luma(vec3 c) { return dot(c,vec3(0.2126,0.7152,0.0722)); }
     float distanceAt(vec2 uv) { float d = texture(uDepth,uv).r; return 240.0 / (240.0-d*239.0); }
-    vec3 filmic(vec3 color) { return clamp((color*(2.51*color+0.03))/(color*(2.43*color+0.59)+0.14),0.0,1.0); }
+    vec3 filmic(vec3 color) { return color/(1.0+max(color.r,max(color.g,color.b))); }
     void main() {
       vec3 c = texture(uImage,vUV).rgb;
       vec3 n = texture(uImage,vUV+vec2(0.0,uPixel.y)).rgb;
@@ -61,17 +61,17 @@
       float low = min(luma(c),min(min(luma(n),luma(s)),min(luma(e),luma(w))));
       float high = max(luma(c),max(max(luma(n),luma(s)),max(luma(e),luma(w))));
       float edge = smoothstep(0.08,0.40,(high-low)/max(0.1,high));
-      c = mix(c,(n+s+e+w+c*2.0)/6.0,edge*0.58);
+      c = mix(c,(n+s+e+w+c*2.0)/6.0,edge*0.38);
       float depth = distanceAt(vUV);
       float outline = max(max(abs(depth-distanceAt(vUV+vec2(uPixel.x,0.0))),abs(depth-distanceAt(vUV-vec2(uPixel.x,0.0)))),
         max(abs(depth-distanceAt(vUV+vec2(0.0,uPixel.y))),abs(depth-distanceAt(vUV-vec2(0.0,uPixel.y)))));
-      c *= 1.0-smoothstep(0.025,0.10,outline/max(1.0,depth))*0.10;
+      c *= 1.0-smoothstep(0.025,0.10,outline/max(1.0,depth))*0.045;
       if(uGlow>0.0) c += texture(uBloom,vUV).rgb*uGlow;
       c *= uGrade;
-      if(uHDR>0.5) c = filmic(c*1.10);
+      if(uHDR>0.5) c = filmic(c);
       c = pow(max(c,vec3(0.0)),vec3(1.0/2.2));
       vec2 q = vUV-0.5;
-      c *= 1.0-smoothstep(0.12,0.60,dot(q,q))*0.13;
+      c *= 1.0-smoothstep(0.12,0.60,dot(q,q))*0.06;
       float dither = fract(dot(gl_FragCoord.xy,vec2(0.06711,0.00583))*52.98291)-0.5;
       outputColor=vec4(c+dither/255.0,1.0);
     }`;
@@ -310,7 +310,7 @@
       gl.uniform1i(this.post.Bloom, 2);
       gl.uniform2f(this.post.Pixel, 1 / this.width, 1 / this.height);
       gl.uniform1f(this.post.HDR, this.hdr ? 1 : 0);
-      gl.uniform1f(this.post.Glow, this.bloom ? 0.22 : 0);
+      gl.uniform1f(this.post.Glow, this.bloom ? 0.065 : 0);
       gl.uniform3fv(this.post.Grade, theme.grade);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       this.drawCalls++;

@@ -7,45 +7,51 @@
   const COLORS = {
     navy: 0x263955,
     ink: 0x192941,
-    cream: 0xfff0cf,
-    white: 0xf6f6ed,
+    cream: 0x7f929e,
+    white: 0xa7b7bd,
     yellow: 0xffd34e,
     coral: 0xff826b,
     pink: 0xe984c0,
     blue: 0x61bde2,
     mint: 0x72e3b3,
     purple: 0xa58ce3,
-    glass: 0x294766,
-    rail: 0xbac4cd,
-    ground: 0x546575,
-    pavement: 0xc4b8aa,
-    green: 0x79bb7b,
+    glass: 0x162e43,
+    rail: 0x6f91a1,
+    ground: 0x273c4e,
+    pavement: 0x465c6a,
+    green: 0x478674,
     skin: 0xffcb56,
   };
   const THEMES = [
     {
-      top: [0.14, 0.32, 0.53],
-      bottom: [0.96, 0.59, 0.42],
-      fog: [0.76, 0.59, 0.59],
-      colors: [0xef876b, 0xf6c384, 0x71accc, 0xe4a2bf],
-      grade: [1.035, 1, 1.015],
-      light: [0.85, 0.78],
+      top: [0.045, 0.085, 0.18],
+      bottom: [0.17, 0.26, 0.38],
+      fog: [0.2, 0.27, 0.36],
+      colors: [0x355369, 0x425268, 0x465b63, 0x62566c],
+      accent: 0x508796,
+      trainColors: [0x428596, 0xb76d61, 0x5c78a4],
+      grade: [0.96, 1, 1.025],
+      light: [0.58, 0.72],
     },
     {
-      top: [0.1, 0.07, 0.26],
-      bottom: [0.46, 0.24, 0.49],
-      fog: [0.43, 0.28, 0.46],
-      colors: [0xa482bd, 0xd98eae, 0xf0cba5, 0x72b5b0],
-      grade: [1.01, 0.99, 1.055],
-      light: [0.32, 0.48],
+      top: [0.1, 0.055, 0.19],
+      bottom: [0.28, 0.17, 0.36],
+      fog: [0.24, 0.19, 0.31],
+      colors: [0x4b425e, 0x55465e, 0x4d546a, 0x455d62],
+      accent: 0x846d9a,
+      trainColors: [0x577b96, 0xb56c87, 0x77769a],
+      grade: [1.015, 0.99, 1.04],
+      light: [0.44, 0.7],
     },
     {
-      top: [0.15, 0.53, 0.75],
-      bottom: [0.68, 0.87, 0.87],
-      fog: [0.63, 0.79, 0.81],
-      colors: [0x6caebc, 0x9bc5b2, 0xf0be78, 0xc6cce0],
-      grade: [0.985, 1.015, 1.045],
-      light: [0.92, 0.83],
+      top: [0.035, 0.15, 0.22],
+      bottom: [0.18, 0.36, 0.42],
+      fog: [0.21, 0.34, 0.39],
+      colors: [0x335b68, 0x4b6870, 0x45616d, 0x5c6563],
+      accent: 0x649293,
+      trainColors: [0x418f96, 0xb77c60, 0x587eab],
+      grade: [0.985, 1.03, 1.015],
+      light: [0.65, 0.68],
     },
   ];
   const VERTEX = `#version 300 es
@@ -79,7 +85,7 @@
     uniform vec4 uCamera; uniform float uTravel; uniform float uShadows; uniform float uShadowPixel;
     uniform sampler2D uShadowMap; uniform sampler2D uAtlas; uniform int uRenderMode;
     out vec4 outputColor;
-    vec3 filmic(vec3 c) {return clamp((c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14),0.0,1.0);}
+    vec3 filmic(vec3 c) {return c/(1.0+max(c.r,max(c.g,c.b)));}
     float shadow(float sun) {
       if(uShadows<0.5 || min(min(vShadow.x,vShadow.y),vShadow.z)<0.0 || max(max(vShadow.x,vShadow.y),vShadow.z)>1.0)return 1.0;
       float bias=max(0.00022,0.00065*(1.0-sun)),sum=0.0;
@@ -103,11 +109,6 @@
         base*=1.0-seam*0.12*(1.0-smoothstep(18.0,60.0,vDepth));
       }
       if(material>4.5 && material<5.5)base*=0.87+0.13*sin((vLocal.y+sin(vLocal.x*16.0)*0.025)*85.0);
-      if(material>6.5 && material<7.5) {
-        vec2 uv=vLocal.xy;float rings=sin(length(uv-vec2(0.1,0.0))*27.0);
-        base=mix(base,vec3(0.9,0.15,0.35),smoothstep(0.3,0.6,rings));
-        base=mix(base,vec3(0.02,0.65,0.6),1.0-smoothstep(0.03,0.045,abs(uv.y-uv.x*0.6+0.12)));
-      }
       if(material>7.5 && material<9.5) {
         float weave=sin(vLocal.x*110.0)*sin(vLocal.y*110.0);
         float detail=1.0-smoothstep(0.2,0.9,max(fwidth(vLocal.x),fwidth(vLocal.y))*110.0);
@@ -122,20 +123,20 @@
         base=mix(base,material>=200.0?base*0.12:vec3(1.0),ink);
       }
       vec3 ambient=mix(vec3(0.24,0.20,0.27),vec3(0.53,0.64,0.76),n.y*0.5+0.5);
-      vec3 color=base*(ambient*uLighting.y+sun*visibility*uLighting.x*vec3(1.65,1.38,1.10))*(1.0-metal*0.35);
+      vec3 color=base*(ambient*uLighting.y+sun*visibility*uLighting.x*vec3(1.35,1.22,1.10))*(1.0-metal*0.35);
       float nh=max(0.0,dot(n,halfway)),a2=rough*rough*rough*rough;
       float spec=min(6.0,a2/(3.14159*pow(nh*nh*(a2-1.0)+1.0,2.0)));
       vec3 f0=mix(vec3(0.035),base,metal);
-      color+=spec*f0*sun*visibility*uLighting.x*0.65;
+      color+=spec*f0*sun*visibility*uLighting.x*0.32;
       float reflected=clamp(reflect(-eye,n).y*0.5+0.5,0.0,1.0);
       vec3 reflection=mix(pow(uBottom,vec3(2.2)),pow(uTop,vec3(2.2)),reflected);
       float fresnel=pow(1.0-max(0.0,dot(n,eye)),4.0);
-      if(material>3.5 && material<4.5)color=mix(color,reflection*1.15,0.55+fresnel*0.3);
-      color+=reflection*fresnel*(0.1+gloss*0.28);
-      color+=base*vMaterial.y*3.2;
-      float fog=1.0-exp(-pow(max(0.0,vDepth-25.0)/155.0,1.65));
-      color=mix(color,pow(uFog,vec3(2.2)),fog);
-      if(uRenderMode>0)color=filmic(color*1.10);
+      if(material>3.5 && material<4.5)color=mix(color,reflection*0.75,0.42+fresnel*0.2);
+      color+=reflection*fresnel*(0.025+gloss*0.09);
+      color+=base*vMaterial.y*1.5;
+      float fog=1.0-exp(-pow(max(0.0,vDepth-45.0)/185.0,1.65));
+      color=mix(color,pow(uFog,vec3(2.2)),min(0.78,fog));
+      if(uRenderMode>0)color=filmic(color);
       if(uRenderMode>1)color=pow(color,vec3(1.0/2.2));
       outputColor=vec4(color,1.0);
     }`;
@@ -156,13 +157,10 @@
     void main() {
       vec2 uv=gl_FragCoord.xy/uSize;
       vec3 sky=pow(mix(uBottom,uTop,smoothstep(0.24,1.0,uv.y)),vec3(2.2));
-      vec2 sun=(uv-vec2(0.76,0.74))*vec2(uSize.x/uSize.y,1.0);
-      sky+=exp(-length(sun)*12.0)*vec3(0.50,0.24,0.06);
-      sky+=vec3(3.8,2.8,1.4)*(1.0-smoothstep(0.037,0.042,length(sun)));
       vec2 p=uv*vec2(9.0*uSize.x/uSize.y,6.0)+vec2(uTime*0.012,0.0);
       float cloud=noise(p)*0.7+noise(p*2.1)*0.3;
-      sky=mix(sky,vec3(0.85,0.68,0.67),smoothstep(0.58,0.79,cloud)*smoothstep(0.4,0.75,uv.y)*0.55);
-      if(uRenderMode>0)sky=clamp((sky*(2.51*sky+0.03))/(sky*(2.43*sky+0.59)+0.14),0.0,1.0);
+      sky+=vec3(0.010,0.014,0.018)*smoothstep(0.58,0.79,cloud)*smoothstep(0.4,0.75,uv.y);
+      if(uRenderMode>0)sky=sky/(1.0+max(sky.r,max(sky.g,sky.b)));
       if(uRenderMode>1)sky=pow(sky,vec3(1.0/2.2));
       outputColor=vec4(sky,1.0);
     }`;
@@ -233,6 +231,37 @@
           vertex(bx * 0.5, side * 0.5, bz * 0.5, 0, side, 0);
         }
       }
+    } else if (kind === 'soft') {
+      const exponent = 2.8;
+      for (let row = 0; row < 12; row++)
+        for (let col = 0; col < 20; col++)
+          for (const [u, v] of [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 0],
+            [1, 1],
+            [0, 1],
+          ]) {
+            const lat = ((row + u) * Math.PI) / 12,
+              lon = ((col + v) * Math.PI) / 10;
+            const x = Math.sin(lat) * Math.cos(lon),
+              y = Math.cos(lat),
+              z = Math.sin(lat) * Math.sin(lon);
+            const radius =
+              0.5 /
+              Math.pow(
+                Math.pow(Math.abs(x), exponent) +
+                  Math.pow(Math.abs(y), exponent) +
+                  Math.pow(Math.abs(z), exponent),
+                1 / exponent,
+              );
+            const nx = Math.sign(x) * Math.pow(Math.abs(x), exponent - 1),
+              ny = Math.sign(y) * Math.pow(Math.abs(y), exponent - 1),
+              nz = Math.sign(z) * Math.pow(Math.abs(z), exponent - 1),
+              length = Math.hypot(nx, ny, nz);
+            vertex(x * radius, y * radius, z * radius, nx / length, ny / length, nz / length);
+          }
     } else if (kind === 'turned') {
       const profile = [
         [-0.5, 0.41],
@@ -370,12 +399,13 @@
     torus: mesh('torus'),
     turned: mesh('turned'),
     grip: mesh('grip'),
+    soft: mesh('soft'),
   };
   const PROFILES = Array.from({ length: 64 }, (_, i) => ({
     height: 2.7 + ((i * 17) % 23) * 0.18,
     width: 2.3 + ((i * 7) % 11) * 0.1,
     color: i % 4,
-    windows: 2 + (i % 3),
+    windows: 2 + (i % 2),
   }));
 
   class Renderer {
@@ -405,6 +435,7 @@
         ['torus', 256],
         ['turned', 64],
         ['grip', 32],
+        ['soft', 128],
       ].map(([kind, capacity]) => ({
         kind,
         mesh: MESHES[kind],
@@ -752,24 +783,24 @@
     }
     facade(x, z, h, width, face, side, index, theme) {
       const district = THEMES.indexOf(theme),
-        accent = theme.colors[(index + 1) % 4];
+        accent = theme.accent;
       this.box(x, h + 0.27, z, width + 0.35, 0.1, 8.6, COLORS.navy);
-      // Front shop fascia and a painted mural are readable from the chase camera.
-      this.box(x, 1.62, z - 4.22, width * 0.91, 0.55, 0.1, COLORS.ink);
-      this.label(
-        x,
-        1.62,
-        z - 4.28,
-        width * 0.87,
-        0.43,
-        accent,
-        [0, 1, 2, 3, 7, 5][index % 6],
-        0.38,
-      );
+      // Sparse shop lettering keeps the route more prominent than the facades.
+      this.box(x, 1.62, z - 4.22, width * 0.91, 0.42, 0.1, COLORS.ink);
+      if (index % 3 === 0)
+        this.label(
+          x,
+          1.62,
+          z - 4.28,
+          width * 0.72,
+          0.28,
+          accent,
+          [0, 1, 2, 3, 7, 5][index % 6],
+          0.035,
+        );
       this.box(x, 0.68, z - 4.21, width * 0.79, 1.02, 0.045, COLORS.glass, 0, 4);
       for (const column of [-1, 0, 1])
         this.box(x + column * width * 0.26, 0.68, z - 4.25, 0.045, 1.05, 0.055, COLORS.cream);
-      this.box(x, h * 0.67, z - 4.23, width * 0.8, h * 0.26, 0.035, accent, 0, 7);
       // Roof air conditioners, ducts, and parapets have a bounded near-distance LOD.
       this.add(3, x - side * 0.4, h + 0.53, z - 1.8, 0.8, 0.53, 1.4, COLORS.cream, 0, 0, 0, 1, 0.4);
       for (let vent = 0; vent < 4; vent++)
@@ -804,22 +835,22 @@
             COLORS.navy,
           );
       }
-      // Small hanging shop signs face the rails, with a glowing border.
-      this.box(face - side * 0.36, 2.64, z - 2.2, 0.72, 0.06, 0.06, COLORS.navy);
-      this.add(3, face - side * 0.65, 2.23, z - 2.2, 0.07, 0.64, 1.3, COLORS.ink);
-      this.label(
-        face - side * 0.7,
-        2.23,
-        z - 2.2,
-        1.13,
-        0.49,
-        accent,
-        (index + district * 4) % 6,
-        0.45,
-        (side * Math.PI) / 2,
-      );
-      this.box(face - side * 0.75, 1.96, z - 2.2, 0.035, 0.028, 1.2, accent, 0.6);
-      if (district === 0) {
+      if (index % 4 === 0) {
+        this.box(face - side * 0.36, 2.64, z - 2.2, 0.72, 0.06, 0.06, COLORS.navy);
+        this.add(3, face - side * 0.65, 2.23, z - 2.2, 0.07, 0.52, 0.95, COLORS.ink);
+        this.label(
+          face - side * 0.7,
+          2.23,
+          z - 2.2,
+          0.82,
+          0.37,
+          accent,
+          (index + district * 4) % 6,
+          0.035,
+          (side * Math.PI) / 2,
+        );
+      }
+      if (district === 0 && index % 3 === 0) {
         // Cafe terraces, flower boxes, and a bike stand.
         this.add(1, side * 2.52, 0.52, z - 2.1, 0.62, 0.07, 0.62, COLORS.cream);
         this.add(1, side * 2.52, 0.25, z - 2.1, 0.055, 0.5, 0.055, COLORS.navy);
@@ -841,10 +872,10 @@
             index % 2 ? COLORS.pink : COLORS.yellow,
           );
         }
-      } else if (district === 1) {
+      } else if (district === 1 && index % 3 === 0) {
         // Lantern strings and arcade storefronts.
         this.box(side * 2.6, 3.04, z - 0.3, 0.04, 0.04, 4.9, COLORS.navy);
-        for (let lamp = 0; lamp < 3; lamp++) {
+        for (let lamp = 0; lamp < 1; lamp++) {
           const phase = this.motionTime * 1.2 + index * 0.7 + lamp;
           const sway = this.motionReduced ? 0 : Math.sin(phase) * 0.045,
             zz = z - 1.7 + lamp * 1.4;
@@ -854,24 +885,24 @@
             side * 2.6 + sway,
             2.49,
             zz,
-            0.28,
-            0.39,
-            0.28,
-            lamp % 2 ? COLORS.yellow : COLORS.pink,
+            0.2,
+            0.27,
+            0.2,
+            accent,
             0,
             0,
             0,
             1,
             0.3,
-            this.motionReduced ? 0.52 : 0.52 + Math.sin(phase * 2) * 0.035,
+            this.motionReduced ? 0.13 : 0.13 + Math.sin(phase * 2) * 0.012,
           );
           for (const end of SIDES)
-            this.add(1, side * 2.6 + sway, 2.49 + end * 0.175, zz, 0.13, 0.027, 0.13, COLORS.navy);
+            this.add(1, side * 2.6 + sway, 2.49 + end * 0.125, zz, 0.13, 0.027, 0.13, COLORS.navy);
         }
         this.add(3, side * 2.65, 0.59, z + 2.0, 0.47, 1.17, 0.45, COLORS.purple);
-        this.box(side * 2.39, 0.79, z + 2, 0.025, 0.4, 0.32, COLORS.glass, 0.3, 4);
-        this.box(side * 2.38, 0.47, z + 2, 0.035, 0.06, 0.27, COLORS.mint, 0.5);
-      } else {
+        this.box(side * 2.39, 0.79, z + 2, 0.025, 0.4, 0.32, COLORS.glass, 0.04, 4);
+        this.box(side * 2.38, 0.47, z + 2, 0.035, 0.06, 0.27, accent, 0.08);
+      } else if (district === 2 && index % 2 === 0) {
         // Harbor palms and bollards, distinct from the old-town tree canopy.
         this.add(1, side * 2.64, 1.05, z + 2.4, 0.16, 2.1, 0.16, 0xae7e54);
         for (let leaf = 0; leaf < 5; leaf++) {
@@ -898,10 +929,10 @@
       for (const side of SIDES) {
         this.box(side * 2.4, -0.04, 110, 1.3, 0.12, 245, COLORS.pavement, 0, 2);
         this.box(side * 1.76, 0.065, 110, 0.13, 0.15, 245, COLORS.cream);
-        this.box(side * 3.12, 0.2, 110, 0.1, 0.45, 245, COLORS.coral);
+        this.box(side * 3.12, 0.2, 110, 0.1, 0.45, 245, COLORS.pavement);
       }
       for (let lane = -1; lane <= 1; lane++) {
-        this.box(lane, -0.009, 110, 0.86, 0.016, 245, 0x435666);
+        this.box(lane, -0.009, 110, 0.86, 0.016, 245, 0x243c4f);
         for (const side of SIDES)
           this.add(
             0,
@@ -919,7 +950,7 @@
             0.95,
           );
         for (let i = 0; i < 76; i++)
-          this.box(lane, 0, i * 2.7 - ((distance % 2.7) + 3), 0.75, 0.02, 0.19, 0x303e4d);
+          this.box(lane, 0, i * 2.7 - ((distance % 2.7) + 3), 0.75, 0.02, 0.19, 0x233645);
       }
       const tile = Math.floor(distance / 12),
         shift = distance % 12;
@@ -963,18 +994,17 @@
                   0.025,
                   0.49,
                   0.63,
-                  theme.light[0] < 0.5 && (tile + i + row + col) % 3 === 0
-                    ? 0xffd8a8
+                  theme.light[0] < 0.5 && (tile + i + row + col) % 7 === 0
+                    ? 0x9da08a
                     : COLORS.glass,
                   0,
                   0,
                   0,
                   1,
                   0.75,
-                  theme.light[0] < 0.5 && (tile + i + row + col) % 3 === 0 ? 0.18 : 0,
+                  theme.light[0] < 0.5 && (tile + i + row + col) % 7 === 0 ? 0.06 : 0,
                   4,
                 );
-                this.box(face - side * 0.04, wy, wz, 0.018, 0.025, 0.65, COLORS.blue, 0.2);
               }
             this.box(face - side * 0.08, 0.46, z, 0.14, 0.9, 1.0, COLORS.navy);
             this.box(
@@ -986,18 +1016,8 @@
               1.9,
               theme.colors[(profile.color + 1) % 4],
             );
-            for (let stripe = 0; stripe < 4; stripe++)
-              this.box(
-                face - side * 0.38,
-                1.12,
-                z - 0.75 + stripe * 0.5,
-                0.8,
-                0.06,
-                0.21,
-                COLORS.white,
-              );
             if ((tile + i) % 3 === 0) {
-              this.box(side * 2.55, 0.46, z + 3.2, 0.65, 0.68, 0.75, COLORS.coral);
+              this.box(side * 2.55, 0.46, z + 3.2, 0.65, 0.68, 0.75, COLORS.pavement);
               this.add(1, side * 2.55, 1.2, z + 3.2, 0.12, 1.1, 0.12, 0x8d6650);
               this.limb(side * 2.55, 1.32, z + 3.2, side * 2.82, 1.83, z + 3.42, 0.08, 0x8d6650);
               this.add(2, side * 2.55 + wind, 2.05, z + 3.2, 0.89, 1.13, 0.91, 0x55a77e);
@@ -1007,7 +1027,7 @@
             } else {
               this.box(side * 2.5, 1.35, z + 3.6, 0.055, 2.7, 0.055, COLORS.navy);
               this.box(side * 2.38, 2.75, z + 3.6, 0.4, 0.09, 0.14, COLORS.navy);
-              this.box(side * 2.37, 2.69, z + 3.6, 0.3, 0.045, 0.11, COLORS.yellow, 0.7);
+              this.box(side * 2.37, 2.69, z + 3.6, 0.3, 0.045, 0.11, COLORS.yellow, 0.2);
               this.add(3, side * 2.38, 2.75, z + 3.6, 0.44, 0.15, 0.25, COLORS.navy);
               this.box(side * 2.5, 0.12, z + 3.6, 0.19, 0.24, 0.19, COLORS.navy);
             }
@@ -1038,8 +1058,8 @@
         const z = i * 72 + 48 - (distance % 72);
         for (const side of SIDES) this.box(side * 2.9, 2.5, z, 0.25, 5, 0.28, COLORS.navy);
         this.box(0, 5.1, z, 6.3, 0.38, 0.42, COLORS.navy);
-        this.box(0, 4.9, z - 0.23, 4.5, 0.1, 0.03, COLORS.yellow, 0.6);
-        this.label(0, 5.13, z - 0.25, 2.8, 0.31, COLORS.navy, 3, 0.4);
+        this.box(0, 4.9, z - 0.23, 4.5, 0.1, 0.03, COLORS.rail, 0.05);
+        this.label(0, 5.13, z - 0.25, 2.8, 0.31, COLORS.navy, 3, 0.04);
       }
     }
     pickupPart(kind, x, y, z, dx, dy, dz, sx, sy, sz, color, spin, turn, emission = 0) {
@@ -1070,7 +1090,7 @@
         return;
       const w = shape.halfWidth * 2;
       if (object.type === 'train') {
-        const color = theme.colors[(object.lane + 1) % 4];
+        const color = theme.trainColors[object.lane % 3];
         const hullHeight = shape.height - 0.17;
         this.add(
           3,
@@ -1140,7 +1160,7 @@
         this.box(x, 1.98, z + 0.008, w * 0.5, 0.08, 0.02, COLORS.cream);
         this.box(x, 0.62, z + 0.012, w * 0.68, 0.075, 0.024, COLORS.cream);
         for (const side of SIDES) {
-          this.box(x + side * w * 0.34, 0.77, z + 0.014, 0.11, 0.12, 0.028, COLORS.yellow, 0.7);
+          this.box(x + side * w * 0.34, 0.77, z + 0.014, 0.11, 0.12, 0.028, COLORS.yellow, 0.2);
           for (let i = 0; i < 5; i++) {
             this.box(
               x + side * (w / 2 + 0.001),
@@ -1465,7 +1485,7 @@
         }
       }
     }
-    limb(x1, y1, z1, x2, y2, z2, width, color) {
+    limb(x1, y1, z1, x2, y2, z2, width, color, kind = 3) {
       const dx = x2 - x1,
         dy = y2 - y1,
         dz = z2 - z1,
@@ -1482,7 +1502,7 @@
       }
       const inverse = 1 / Math.hypot(qx, qz, qw);
       this.add(
-        3,
+        kind,
         (x1 + x2) / 2,
         (y1 + y2) / 2,
         (z1 + z2) / 2,
