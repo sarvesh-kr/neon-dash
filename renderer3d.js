@@ -1,4 +1,4 @@
-/* Original, bounded WebGL2 scene. No libraries, textures, downloads, or render timers. */
+/* Original instanced city. Fixed pools, procedural materials, and a local glyph atlas. */
 (() => {
   'use strict';
   const STRIDE = 16;
@@ -24,22 +24,28 @@
   };
   const THEMES = [
     {
-      top: [0.24, 0.48, 0.7],
-      bottom: [1, 0.76, 0.58],
-      fog: [0.83, 0.74, 0.7],
-      colors: [COLORS.coral, COLORS.cream, COLORS.blue, COLORS.yellow],
+      top: [0.14, 0.32, 0.53],
+      bottom: [0.96, 0.59, 0.42],
+      fog: [0.76, 0.59, 0.59],
+      colors: [0xef876b, 0xf6c384, 0x71accc, 0xe4a2bf],
+      grade: [1.035, 1, 1.015],
+      light: [0.85, 0.78],
     },
     {
-      top: [0.35, 0.3, 0.62],
-      bottom: [0.98, 0.67, 0.7],
-      fog: [0.75, 0.63, 0.75],
-      colors: [COLORS.purple, COLORS.pink, COLORS.cream, COLORS.mint],
+      top: [0.1, 0.07, 0.26],
+      bottom: [0.46, 0.24, 0.49],
+      fog: [0.43, 0.28, 0.46],
+      colors: [0xa482bd, 0xd98eae, 0xf0cba5, 0x72b5b0],
+      grade: [1.01, 0.99, 1.055],
+      light: [0.32, 0.48],
     },
     {
       top: [0.15, 0.53, 0.75],
       bottom: [0.68, 0.87, 0.87],
       fog: [0.63, 0.79, 0.81],
-      colors: [COLORS.blue, COLORS.mint, COLORS.yellow, COLORS.cream],
+      colors: [0x6caebc, 0x9bc5b2, 0xf0be78, 0xc6cce0],
+      grade: [0.985, 1.015, 1.045],
+      light: [0.92, 0.83],
     },
   ];
   const VERTEX = `#version 300 es
@@ -51,77 +57,107 @@
     layout(location=4) in vec4 iRotation;
     layout(location=5) in vec4 iColor;
     layout(location=6) in vec2 iMaterial;
-    uniform vec4 uCamera;
-    uniform vec2 uView;
-    out vec3 vNormal;
-    out vec3 vColor;
-    out vec3 vMaterial;
-    out vec3 vWorld;
-    out float vDepth;
-    vec3 rotate(vec3 v, vec4 q) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+    uniform vec4 uCamera; uniform vec2 uView; uniform mat4 uLight;
+    out vec3 vNormal; out vec3 vColor; out vec3 vMaterial;
+    out vec3 vWorld; out vec3 vLocal; out vec3 vShadow; out float vDepth;
+    vec3 rotate(vec3 v,vec4 q) {return v+2.0*cross(q.xyz,cross(q.xyz,v)+q.w*v);}
     void main() {
-      vec3 world = rotate(aPosition * iScale, iRotation) + iPosition;
-      vec3 delta = world - uCamera.xyz;
-      float c = cos(uCamera.w), s = sin(uCamera.w);
-      vec3 view = vec3(delta.x, c * delta.y + s * delta.z, c * delta.z - s * delta.y);
-      gl_Position = vec4(view.x * uView.x / uView.y, view.y * uView.x,
-        1.0083682 * view.z - 2.0083682, view.z);
-      vNormal = normalize(rotate(aNormal / iScale, iRotation));
-      vColor = iColor.rgb;
-      vMaterial = vec3(iMaterial, iColor.a);
-      vWorld = world;
-      vDepth = view.z;
+      vec3 world=rotate(aPosition*iScale,iRotation)+iPosition;
+      vec3 delta=world-uCamera.xyz;
+      float c=cos(uCamera.w),s=sin(uCamera.w);
+      vec3 view=vec3(delta.x,c*delta.y+s*delta.z,c*delta.z-s*delta.y);
+      gl_Position=vec4(view.x*uView.x/uView.y,view.y*uView.x,1.0083682*view.z-2.0083682,view.z);
+      vNormal=normalize(rotate(aNormal/iScale,iRotation));
+      vColor=pow(iColor.rgb,vec3(2.2));vMaterial=vec3(iMaterial,iColor.a);
+      vWorld=world;vLocal=aPosition;vShadow=(uLight*vec4(world,1.0)).xyz*0.5+0.5;vDepth=view.z;
     }`;
   const FRAGMENT = `#version 300 es
-    precision mediump float;
-    in vec3 vNormal;
-    in vec3 vColor;
-    in vec3 vMaterial;
-    in vec3 vWorld;
-    in float vDepth;
-    uniform vec3 uFog;
-    uniform float uTravel;
+    precision highp float;
+    in vec3 vNormal; in vec3 vColor; in vec3 vMaterial;
+    in vec3 vWorld; in vec3 vLocal; in vec3 vShadow; in float vDepth;
+    uniform vec3 uFog; uniform vec3 uTop; uniform vec3 uBottom; uniform vec2 uLighting;
+    uniform vec4 uCamera; uniform float uTravel; uniform float uShadows; uniform float uShadowPixel;
+    uniform sampler2D uShadowMap; uniform sampler2D uAtlas; uniform int uRenderMode;
     out vec4 outputColor;
-    void main() {
-      vec3 n = normalize(vNormal);
-      float sun = max(0.0, dot(n, normalize(vec3(-0.45, 0.85, -0.50))));
-      float toon = mix(sun, floor(sun * 4.0) / 4.0, 0.35);
-      vec3 shade = vec3(0.59, 0.63, 0.71) + toon * vec3(0.48, 0.43, 0.36);
-      shade += max(0.0, n.y) * vec3(0.06, 0.08, 0.10);
-      float shine = pow(max(0.0, dot(n, normalize(vec3(-0.35, 0.7, -0.9)))), 20.0);
-      vec3 color = vColor * mix(shade, vec3(1.08), vMaterial.y) + shine * vMaterial.x * 0.28;
-      if (vMaterial.z > 0.5) {
-        vec2 cell;
-        if (vMaterial.z < 1.5) {
-          cell = vec2(abs(n.x) > 0.6 ? vWorld.z + uTravel : vWorld.x, vWorld.y) * vec2(1.7, 3.5);
-          cell.x += step(0.5, fract(cell.y * 0.5)) * 0.5;
-        } else {
-          cell = vec2(vWorld.x * 2.0, (vWorld.z + uTravel) * 1.5);
-        }
-        float seam = smoothstep(0.465, 0.495, max(abs(fract(cell.x) - 0.5), abs(fract(cell.y) - 0.5)));
-        color *= 1.0 - seam * 0.09 * (1.0 - smoothstep(16.0, 55.0, vDepth));
+    vec3 filmic(vec3 c) {return clamp((c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14),0.0,1.0);}
+    float shadow(float sun) {
+      if(uShadows<0.5 || min(min(vShadow.x,vShadow.y),vShadow.z)<0.0 || max(max(vShadow.x,vShadow.y),vShadow.z)>1.0)return 1.0;
+      float bias=max(0.00022,0.00065*(1.0-sun)),sum=0.0;
+      for(int x=0;x<2;x++)for(int y=0;y<2;y++) {
+        float d=texture(uShadowMap,vShadow.xy+(vec2(float(x),float(y))-0.5)*uShadowPixel*1.6).r;
+        sum+=step(vShadow.z-bias,d);
       }
-      outputColor = vec4(mix(color, uFog, smoothstep(48.0, 215.0, vDepth)), 1.0);
+      return mix(0.38,1.0,sum*0.25);
+    }
+    void main() {
+      vec3 n=normalize(vNormal),eye=normalize(uCamera.xyz-vWorld);
+      vec3 light=normalize(vec3(-0.45,0.85,-0.50)),halfway=normalize(light+eye);
+      float sun=max(0.0,dot(n,light)),visibility=shadow(sun);
+      float gloss=vMaterial.x,metal=smoothstep(0.86,0.98,gloss),rough=max(0.075,0.65-gloss*0.48);
+      vec3 base=vColor;
+      float material=vMaterial.z;
+      if(material>0.5 && material<2.5) {
+        vec2 cell=material<1.5?vec2(abs(n.x)>0.6?vWorld.z+uTravel:vWorld.x,vWorld.y)*vec2(1.7,3.5):vec2(vWorld.x*2.0,(vWorld.z+uTravel)*1.5);
+        if(material<1.5)cell.x+=step(0.5,fract(cell.y*0.5))*0.5;
+        float seam=smoothstep(0.465,0.495,max(abs(fract(cell.x)-0.5),abs(fract(cell.y)-0.5)));
+        base*=1.0-seam*0.12*(1.0-smoothstep(18.0,60.0,vDepth));
+      }
+      if(material>4.5 && material<5.5)base*=0.87+0.13*sin((vLocal.y+sin(vLocal.x*16.0)*0.025)*85.0);
+      if(material>6.5 && material<7.5) {
+        vec2 uv=vLocal.xy;float rings=sin(length(uv-vec2(0.1,0.0))*27.0);
+        base=mix(base,vec3(0.9,0.15,0.35),smoothstep(0.3,0.6,rings));
+        base=mix(base,vec3(0.02,0.65,0.6),1.0-smoothstep(0.03,0.045,abs(uv.y-uv.x*0.6+0.12)));
+      }
+      if(material>=100.0) {
+        float glyph=mod(material,100.0);
+        vec2 uv=(vec2(mod(glyph,4.0),3.0-floor(glyph/4.0))+clamp(vLocal.xy+0.5,0.015,0.985))/4.0;
+        float ink=texture(uAtlas,uv).a;
+        base=mix(base,material>=200.0?base*0.12:vec3(1.0),ink);
+      }
+      vec3 ambient=mix(vec3(0.24,0.20,0.27),vec3(0.53,0.64,0.76),n.y*0.5+0.5);
+      vec3 color=base*(ambient*uLighting.y+sun*visibility*uLighting.x*vec3(1.65,1.38,1.10))*(1.0-metal*0.35);
+      float nh=max(0.0,dot(n,halfway)),a2=rough*rough*rough*rough;
+      float spec=min(6.0,a2/(3.14159*pow(nh*nh*(a2-1.0)+1.0,2.0)));
+      vec3 f0=mix(vec3(0.035),base,metal);
+      color+=spec*f0*sun*visibility*uLighting.x*0.65;
+      float reflected=clamp(reflect(-eye,n).y*0.5+0.5,0.0,1.0);
+      vec3 reflection=mix(pow(uBottom,vec3(2.2)),pow(uTop,vec3(2.2)),reflected);
+      float fresnel=pow(1.0-max(0.0,dot(n,eye)),4.0);
+      if(material>3.5 && material<4.5)color=mix(color,reflection*1.15,0.55+fresnel*0.3);
+      color+=reflection*fresnel*(0.1+gloss*0.28);
+      color+=base*vMaterial.y*3.2;
+      float fog=1.0-exp(-pow(max(0.0,vDepth-25.0)/155.0,1.65));
+      color=mix(color,pow(uFog,vec3(2.2)),fog);
+      if(uRenderMode>0)color=filmic(color*1.10);
+      if(uRenderMode>1)color=pow(color,vec3(1.0/2.2));
+      outputColor=vec4(color,1.0);
     }`;
   const SKY_VERTEX = `#version 300 es
     void main() {
-      vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-      gl_Position = vec4(p * 2.0 - 1.0, 0.9999, 1.0);
+      vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));
+      gl_Position=vec4(p*2.0-1.0,0.9999,1.0);
     }`;
   const SKY_FRAGMENT = `#version 300 es
-    precision mediump float;
-    uniform vec2 uSize;
-    uniform vec3 uTop;
-    uniform vec3 uBottom;
-    out vec4 outputColor;
+    precision highp float;
+    uniform vec2 uSize; uniform vec3 uTop; uniform vec3 uBottom;
+    uniform float uTime; uniform int uRenderMode; out vec4 outputColor;
+    float noise(vec2 p) {
+      vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+      vec4 h=fract(sin(vec4(dot(i,vec2(127.1,311.7)),dot(i+vec2(1,0),vec2(127.1,311.7)),dot(i+vec2(0,1),vec2(127.1,311.7)),dot(i+1.0,vec2(127.1,311.7))))*43758.5453);
+      return mix(mix(h.x,h.y,f.x),mix(h.z,h.w,f.x),f.y);
+    }
     void main() {
-      vec2 uv = gl_FragCoord.xy / uSize;
-      vec3 sky = mix(uBottom, uTop, smoothstep(0.28, 1.0, uv.y));
-      vec2 sun = (uv - vec2(0.76, 0.78)) * vec2(uSize.x / uSize.y, 1.0);
-      float glow = max(0.0, 1.0 - length(sun) / 0.24);
-      sky += glow * glow * vec3(0.18, 0.10, 0.02);
-      sky = mix(sky, vec3(1.0, 0.91, 0.71), 1.0 - smoothstep(0.047, 0.051, length(sun)));
-      outputColor = vec4(sky, 1.0);
+      vec2 uv=gl_FragCoord.xy/uSize;
+      vec3 sky=pow(mix(uBottom,uTop,smoothstep(0.24,1.0,uv.y)),vec3(2.2));
+      vec2 sun=(uv-vec2(0.76,0.74))*vec2(uSize.x/uSize.y,1.0);
+      sky+=exp(-length(sun)*12.0)*vec3(0.50,0.24,0.06);
+      sky+=vec3(3.8,2.8,1.4)*(1.0-smoothstep(0.037,0.042,length(sun)));
+      vec2 p=uv*vec2(9.0*uSize.x/uSize.y,6.0)+vec2(uTime*0.012,0.0);
+      float cloud=noise(p)*0.7+noise(p*2.1)*0.3;
+      sky=mix(sky,vec3(0.85,0.68,0.67),smoothstep(0.58,0.79,cloud)*smoothstep(0.4,0.75,uv.y)*0.55);
+      if(uRenderMode>0)sky=clamp((sky*(2.51*sky+0.03))/(sky*(2.43*sky+0.59)+0.14),0.0,1.0);
+      if(uRenderMode>1)sky=pow(sky,vec3(1.0/2.2));
+      outputColor=vec4(sky,1.0);
     }`;
 
   function mesh(kind) {
@@ -168,9 +204,9 @@
               }
             }
     } else if (kind === 'cylinder') {
-      for (let i = 0; i < 16; i++) {
-        const a = (i * Math.PI) / 8,
-          b = ((i + 1) * Math.PI) / 8;
+      for (let i = 0; i < 24; i++) {
+        const a = (i * Math.PI) / 12,
+          b = ((i + 1) * Math.PI) / 12;
         const ax = Math.cos(a),
           az = Math.sin(a),
           bx = Math.cos(b),
@@ -190,9 +226,32 @@
           vertex(bx * 0.5, side * 0.5, bz * 0.5, 0, side, 0);
         }
       }
+    } else if (kind === 'torus') {
+      for (let ring = 0; ring < 24; ring++)
+        for (let tube = 0; tube < 8; tube++)
+          for (const [u, v] of [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 0],
+            [1, 1],
+            [0, 1],
+          ]) {
+            const a = ((ring + u) * Math.PI) / 12,
+              b = ((tube + v) * Math.PI) / 4,
+              r = 0.41 + 0.09 * Math.cos(b);
+            vertex(
+              Math.cos(a) * r,
+              Math.sin(a) * r,
+              Math.sin(b) * 0.09,
+              Math.cos(a) * Math.cos(b),
+              Math.sin(a) * Math.cos(b),
+              Math.sin(b),
+            );
+          }
     } else {
       for (let row = 0; row < 8; row++)
-        for (let col = 0; col < 12; col++) {
+        for (let col = 0; col < 16; col++) {
           for (const corner of [
             [0, 0],
             [1, 0],
@@ -202,7 +261,7 @@
             [0, 1],
           ]) {
             const lat = ((row + corner[0]) * Math.PI) / 8,
-              lon = ((col + corner[1]) * Math.PI) / 6;
+              lon = ((col + corner[1]) * Math.PI) / 8;
             const x = Math.sin(lat) * Math.cos(lon),
               y = Math.cos(lat),
               z = Math.sin(lat) * Math.sin(lon);
@@ -217,6 +276,7 @@
     cylinder: mesh('cylinder'),
     sphere: mesh('sphere'),
     rounded: mesh('rounded'),
+    torus: mesh('torus'),
   };
   const PROFILES = Array.from({ length: 64 }, (_, i) => ({
     height: 2.7 + ((i * 17) % 23) * 0.18,
@@ -234,7 +294,7 @@
       this.canvas.setAttribute('aria-hidden', 'true');
       this.gl = this.canvas.getContext('webgl2', {
         alpha: false,
-        antialias: true,
+        antialias: false,
         depth: true,
         stencil: false,
         preserveDrawingBuffer: false,
@@ -246,7 +306,8 @@
         ['cube', 4096],
         ['cylinder', 384],
         ['sphere', 384],
-        ['rounded', 128],
+        ['rounded', 256],
+        ['torus', 256],
       ].map(([kind, capacity]) => ({
         kind,
         capacity,
@@ -257,10 +318,10 @@
       this.pointCursor = 0;
       this.width = this.height = 1;
       this.eyeX = 0;
-      this.eyeY = 3;
-      this.eyeZ = -2;
+      this.eyeY = 2.9;
+      this.eyeZ = -1;
       this.pitch = 0.1;
-      this.focal = 1 / Math.tan((26 * Math.PI) / 180);
+      this.focal = 1 / Math.tan((24.5 * Math.PI) / 180);
       this.quality = 'auto';
       this.scale = 1;
       this.samples = 0;
@@ -340,14 +401,26 @@
         view: gl.getUniformLocation(this.sceneProgram, 'uView'),
         fog: gl.getUniformLocation(this.sceneProgram, 'uFog'),
         travel: gl.getUniformLocation(this.sceneProgram, 'uTravel'),
+        top: gl.getUniformLocation(this.sceneProgram, 'uTop'),
+        lighting: gl.getUniformLocation(this.sceneProgram, 'uLighting'),
+        bottom: gl.getUniformLocation(this.sceneProgram, 'uBottom'),
+        light: gl.getUniformLocation(this.sceneProgram, 'uLight'),
+        shadow: gl.getUniformLocation(this.sceneProgram, 'uShadowMap'),
+        shadows: gl.getUniformLocation(this.sceneProgram, 'uShadows'),
+        shadowPixel: gl.getUniformLocation(this.sceneProgram, 'uShadowPixel'),
+        atlas: gl.getUniformLocation(this.sceneProgram, 'uAtlas'),
+        mode: gl.getUniformLocation(this.sceneProgram, 'uRenderMode'),
       };
       this.skyUniforms = {
         size: gl.getUniformLocation(this.skyProgram, 'uSize'),
         top: gl.getUniformLocation(this.skyProgram, 'uTop'),
         bottom: gl.getUniformLocation(this.skyProgram, 'uBottom'),
+        time: gl.getUniformLocation(this.skyProgram, 'uTime'),
+        mode: gl.getUniformLocation(this.skyProgram, 'uRenderMode'),
       };
       this.skyVAO = this.resource('VertexArray', gl.createVertexArray());
       for (const batch of this.batches) {
+        batch.vertices = MESHES[batch.kind].length / 6;
         batch.vao = this.resource('VertexArray', gl.createVertexArray());
         gl.bindVertexArray(batch.vao);
         const vertices = this.resource('Buffer', gl.createBuffer());
@@ -375,13 +448,67 @@
       gl.bindVertexArray(null);
       gl.disable(gl.CULL_FACE);
       gl.disable(gl.BLEND);
+      this.atlas = this.createAtlas();
+      if (!window.NeonPipeline) throw new Error('Render pipeline unavailable');
+      this.pipeline = window.NeonPipeline.create(this);
       this.released = false;
+    }
+    createAtlas() {
+      const gl = this.gl,
+        canvas = (this.glyphCanvas ||= document.createElement('canvas'));
+      canvas.width = 512;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Glyph canvas unavailable');
+      ctx.clearRect(0, 0, 512, 256);
+      ctx.font = '900 23px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      [
+        'NEON',
+        'ARCADE',
+        'CAFE',
+        'METRO',
+        'HARBOR',
+        'NIGHT',
+        'ND',
+        'VIOLET',
+        'CITY RUN',
+        'PLAY',
+        'RUSH',
+        'GO',
+        '01',
+        '02',
+        '03',
+        'DASH',
+      ].forEach((label, i) =>
+        ctx.fillText(label, (i % 4) * 128 + 64, Math.floor(i / 4) * 64 + 32, 120),
+      );
+      const texture = this.resource('Texture', gl.createTexture());
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      return texture;
     }
     releaseGPU() {
       if (!this.lost)
         for (const resource of this.resources) this.gl[`delete${resource.kind}`](resource.value);
       this.resources.length = 0;
-      this.sceneProgram = this.skyProgram = this.skyVAO = this.uniforms = this.skyUniforms = null;
+      this.sceneProgram =
+        this.skyProgram =
+        this.skyVAO =
+        this.uniforms =
+        this.skyUniforms =
+        this.atlas =
+        this.pipeline =
+          null;
+      if (this.glyphCanvas) this.glyphCanvas.width = this.glyphCanvas.height = 0;
       for (const batch of this.batches) batch.vao = batch.buffer = null;
     }
     release() {
@@ -401,6 +528,7 @@
           this.releaseGPU();
           this.disabled = true;
           this.canvas.hidden = true;
+          this.onChange?.();
           return false;
         }
       }
@@ -417,6 +545,15 @@
       );
       const w = Math.max(1, Math.floor(width * dpr)),
         h = Math.max(1, Math.floor(height * dpr));
+      try {
+        this.pipeline?.resize(w, h, this.quality, this.scale);
+      } catch (_) {
+        this.releaseGPU();
+        this.disabled = true;
+        this.canvas.hidden = true;
+        this.onChange?.();
+        return false;
+      }
       if (this.canvas.width === w && this.canvas.height === h) return false;
       this.canvas.width = w;
       this.canvas.height = h;
@@ -495,6 +632,160 @@
     box(x, y, z, sx, sy, sz, color, emissive = 0, material = 0) {
       this.add(0, x, y, z, sx, sy, sz, color, 0, 0, 0, 1, 0.1, emissive, material);
     }
+    label(x, y, z, width, height, color, glyph, emissive = 0.2, rotation = 0, engraved = false) {
+      this.add(
+        0,
+        x,
+        y,
+        z,
+        width,
+        height,
+        0.022,
+        color,
+        0,
+        Math.sin(rotation / 2),
+        0,
+        Math.cos(rotation / 2),
+        0.25,
+        emissive,
+        (engraved ? 200 : 100) + glyph,
+      );
+    }
+    facade(x, z, h, width, face, side, index, theme) {
+      const district = THEMES.indexOf(theme),
+        accent = theme.colors[(index + 1) % 4];
+      this.box(x, h + 0.27, z, width + 0.35, 0.1, 8.6, COLORS.navy);
+      // Front shop fascia and a painted mural are readable from the chase camera.
+      this.box(x, 1.62, z - 4.22, width * 0.91, 0.55, 0.1, COLORS.ink);
+      this.label(
+        x,
+        1.62,
+        z - 4.28,
+        width * 0.87,
+        0.43,
+        accent,
+        [0, 1, 2, 3, 7, 5][index % 6],
+        0.38,
+      );
+      this.box(x, 0.68, z - 4.21, width * 0.79, 1.02, 0.045, COLORS.glass, 0, 4);
+      for (const column of [-1, 0, 1])
+        this.box(x + column * width * 0.26, 0.68, z - 4.25, 0.045, 1.05, 0.055, COLORS.cream);
+      this.box(x, h * 0.67, z - 4.23, width * 0.8, h * 0.26, 0.035, accent, 0, 7);
+      // Roof air conditioners, ducts, and parapets have a bounded near-distance LOD.
+      this.add(3, x - side * 0.4, h + 0.53, z - 1.8, 0.8, 0.53, 1.4, COLORS.cream, 0, 0, 0, 1, 0.4);
+      for (let vent = 0; vent < 4; vent++)
+        this.box(x - side * 0.4, h + 0.79, z - 2.23 + vent * 0.25, 0.65, 0.016, 0.07, COLORS.navy);
+      this.add(
+        1,
+        x + side * 0.65,
+        h + 0.4,
+        z + 2.1,
+        0.35,
+        0.62,
+        0.35,
+        COLORS.rail,
+        0,
+        0,
+        0,
+        1,
+        0.94,
+      );
+      for (let level = 0; level < Math.min(3, Math.floor(h / 1.8)); level++) {
+        const y = 2.0 + level * 1.5;
+        this.box(face - side * 0.23, y, z + 1.8, 0.5, 0.09, 1.7, COLORS.cream);
+        this.box(face - side * 0.48, y + 0.24, z + 1.8, 0.035, 0.045, 1.7, COLORS.navy);
+        for (let bar = 0; bar < 5; bar++)
+          this.box(
+            face - side * 0.48,
+            y + 0.12,
+            z + 1.1 + bar * 0.35,
+            0.028,
+            0.25,
+            0.028,
+            COLORS.navy,
+          );
+      }
+      // Small hanging shop signs face the rails, with a glowing border.
+      this.box(face - side * 0.36, 2.64, z - 2.2, 0.72, 0.06, 0.06, COLORS.navy);
+      this.add(3, face - side * 0.65, 2.23, z - 2.2, 0.07, 0.64, 1.3, COLORS.ink);
+      this.label(
+        face - side * 0.7,
+        2.23,
+        z - 2.2,
+        1.13,
+        0.49,
+        accent,
+        (index + district * 4) % 6,
+        0.45,
+        (side * Math.PI) / 2,
+      );
+      this.box(face - side * 0.75, 1.96, z - 2.2, 0.035, 0.028, 1.2, accent, 0.6);
+      if (district === 0) {
+        // Cafe terraces, flower boxes, and a bike stand.
+        this.add(1, side * 2.52, 0.52, z - 2.1, 0.62, 0.07, 0.62, COLORS.cream);
+        this.add(1, side * 2.52, 0.25, z - 2.1, 0.055, 0.5, 0.055, COLORS.navy);
+        for (const end of SIDES) {
+          this.box(side * 2.55, 0.25, z - 2.1 + end * 0.61, 0.46, 0.07, 0.34, accent);
+          this.box(side * 2.55, 0.16, z - 2.1 + end * 0.61, 0.055, 0.26, 0.3, COLORS.navy);
+        }
+        this.box(side * 2.62, 0.24, z + 1.75, 0.55, 0.42, 0.8, COLORS.cream);
+        for (let flower = 0; flower < 3; flower++) {
+          this.add(2, side * 2.62, 0.51, z + 1.5 + flower * 0.23, 0.29, 0.24, 0.29, COLORS.green);
+          this.add(
+            2,
+            side * 2.61,
+            0.65,
+            z + 1.5 + flower * 0.23,
+            0.1,
+            0.1,
+            0.1,
+            index % 2 ? COLORS.pink : COLORS.yellow,
+          );
+        }
+      } else if (district === 1) {
+        // Lantern strings and arcade storefronts.
+        for (let lamp = 0; lamp < 3; lamp++) {
+          this.box(side * 2.6, 2.77, z - 1.7 + lamp * 1.4, 0.025, 0.5, 0.025, COLORS.navy);
+          this.add(
+            2,
+            side * 2.6,
+            2.49,
+            z - 1.7 + lamp * 1.4,
+            0.28,
+            0.39,
+            0.28,
+            lamp % 2 ? COLORS.yellow : COLORS.pink,
+            0,
+            0,
+            0,
+            1,
+            0.3,
+            0.6,
+          );
+        }
+        this.add(3, side * 2.65, 0.59, z + 2.0, 0.47, 1.17, 0.45, COLORS.purple);
+        this.box(side * 2.39, 0.79, z + 2, 0.025, 0.4, 0.32, COLORS.glass, 0.3, 4);
+        this.box(side * 2.38, 0.47, z + 2, 0.035, 0.06, 0.27, COLORS.mint, 0.5);
+      } else {
+        // Harbor palms and bollards, distinct from the old-town tree canopy.
+        this.add(1, side * 2.64, 1.05, z + 2.4, 0.16, 2.1, 0.16, 0xae7e54);
+        for (let leaf = 0; leaf < 5; leaf++) {
+          const a = leaf * Math.PI * 0.4;
+          this.limb(
+            side * 2.64,
+            2.09,
+            z + 2.4,
+            side * 2.64 + Math.cos(a) * 0.7,
+            1.86,
+            z + 2.4 + Math.sin(a) * 0.7,
+            0.13,
+            0x3e9e85,
+          );
+        }
+        this.add(1, side * 2.1, 0.32, z - 2.2, 0.19, 0.63, 0.19, COLORS.navy, 0, 0, 0, 1, 0.6);
+        this.add(1, side * 2.1, 0.57, z - 2.2, 0.2, 0.08, 0.2, COLORS.yellow);
+      }
+    }
     world(distance, theme) {
       this.box(0, -0.17, 110, 3.5, 0.3, 245, COLORS.ground);
       for (const side of SIDES) {
@@ -505,7 +796,21 @@
       for (let lane = -1; lane <= 1; lane++) {
         this.box(lane, -0.009, 110, 0.86, 0.016, 245, 0x435666);
         for (const side of SIDES)
-          this.box(lane + side * 0.32, 0.008, 110, 0.035, 0.024, 245, COLORS.rail);
+          this.add(
+            0,
+            lane + side * 0.32,
+            0.008,
+            110,
+            0.035,
+            0.024,
+            245,
+            COLORS.rail,
+            0,
+            0,
+            0,
+            1,
+            0.95,
+          );
         for (let i = 0; i < 76; i++)
           this.box(lane, 0, i * 2.7 - ((distance % 2.7) + 3), 0.75, 0.02, 0.19, 0x303e4d);
       }
@@ -523,13 +828,42 @@
           this.box(x, h * 0.46, z - 4.2, profile.width + 0.12, 0.14, 0.2, COLORS.cream);
           this.box(x, h * 0.46, z + 4.2, profile.width + 0.12, 0.14, 0.2, COLORS.cream);
           const face = x - side * (profile.width / 2 + 0.015);
+          if (z < 85)
+            this.facade(
+              x,
+              z,
+              h,
+              profile.width,
+              face,
+              side,
+              (tile + i) * 2 + (side > 0 ? 1 : 0),
+              theme,
+            );
           if (z < 115) {
             for (let row = 0; row < profile.windows; row++)
               for (let col = 0; col < 3; col++) {
                 const wy = 1.25 + (row * (h - 1.3)) / profile.windows,
                   wz = z - 2.5 + col * 2.5;
                 this.box(face, wy, wz, 0.03, 0.62, 0.77, COLORS.cream);
-                this.box(face - side * 0.021, wy, wz, 0.025, 0.49, 0.63, COLORS.glass);
+                this.add(
+                  0,
+                  face - side * 0.021,
+                  wy,
+                  wz,
+                  0.025,
+                  0.49,
+                  0.63,
+                  theme.light[0] < 0.5 && (tile + i + row + col) % 3 === 0
+                    ? 0xffd8a8
+                    : COLORS.glass,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0.75,
+                  theme.light[0] < 0.5 && (tile + i + row + col) % 3 === 0 ? 0.18 : 0,
+                  4,
+                );
                 this.box(face - side * 0.04, wy, wz, 0.018, 0.025, 0.65, COLORS.blue, 0.2);
               }
             this.box(face - side * 0.08, 0.46, z, 0.14, 0.9, 1.0, COLORS.navy);
@@ -555,17 +889,39 @@
             if ((tile + i) % 3 === 0) {
               this.box(side * 2.55, 0.46, z + 3.2, 0.65, 0.68, 0.75, COLORS.coral);
               this.add(1, side * 2.55, 1.2, z + 3.2, 0.12, 1.1, 0.12, 0x8d6650);
-              this.add(2, side * 2.55, 2.0, z + 3.2, 1.1, 1.45, 0.95, COLORS.green);
-              this.add(2, side * 2.75, 1.85, z + 3.4, 0.85, 1.0, 0.85, 0x9bce84);
+              this.limb(side * 2.55, 1.32, z + 3.2, side * 2.82, 1.83, z + 3.42, 0.08, 0x8d6650);
+              this.add(2, side * 2.55, 2.05, z + 3.2, 0.89, 1.13, 0.91, 0x55a77e);
+              this.add(2, side * 2.79, 1.84, z + 3.45, 0.76, 0.84, 0.71, 0x8bc78b);
+              this.add(2, side * 2.31, 1.9, z + 3.05, 0.69, 0.78, 0.73, 0x6fb77c);
+              this.add(2, side * 2.58, 2.48, z + 3.27, 0.61, 0.62, 0.58, 0xa2cd92);
             } else {
               this.box(side * 2.5, 1.35, z + 3.6, 0.055, 2.7, 0.055, COLORS.navy);
               this.box(side * 2.38, 2.75, z + 3.6, 0.4, 0.09, 0.14, COLORS.navy);
               this.box(side * 2.37, 2.69, z + 3.6, 0.3, 0.045, 0.11, COLORS.yellow, 0.7);
+              this.add(3, side * 2.38, 2.75, z + 3.6, 0.44, 0.15, 0.25, COLORS.navy);
+              this.box(side * 2.5, 0.12, z + 3.6, 0.19, 0.24, 0.19, COLORS.navy);
             }
           }
           if (i % 2 === 0) {
             this.box(side * 9, h + 1, z, 3.9, h * 2 + 2, 9, theme.colors[(profile.color + 2) % 4]);
             this.box(side * 9, h * 2 + 2.15, z, 4.05, 0.3, 9.2, COLORS.cream);
+            if (z < 150) {
+              this.box(side * 9, h * 1.4, z - 4.53, 2.7, h * 0.7, 0.025, COLORS.glass, 0, 4);
+              for (let floor = 0; floor < 4; floor++)
+                this.box(
+                  side * 9,
+                  h * 1.08 + floor * h * 0.17,
+                  z - 4.56,
+                  2.75,
+                  0.045,
+                  0.027,
+                  COLORS.cream,
+                );
+              this.add(1, side * 9, h * 2 + 3.0, z, 1.55, 1.4, 1.55, COLORS.navy, 0, 0, 0, 1, 0.6);
+              this.add(1, side * 9, h * 2 + 3.72, z, 1.68, 0.12, 1.68, theme.colors[profile.color]);
+              for (const support of SIDES)
+                this.box(side * 9 + support * 0.53, h * 2 + 2.35, z, 0.09, 0.7, 0.09, COLORS.rail);
+            }
           }
         }
       for (let i = 0; i < 3; i++) {
@@ -573,6 +929,7 @@
         for (const side of SIDES) this.box(side * 2.9, 2.5, z, 0.25, 5, 0.28, COLORS.navy);
         this.box(0, 5.1, z, 6.3, 0.38, 0.42, COLORS.navy);
         this.box(0, 4.9, z - 0.23, 4.5, 0.1, 0.03, COLORS.yellow, 0.6);
+        this.label(0, 5.13, z - 0.25, 2.8, 0.31, COLORS.navy, 3, 0.4);
       }
     }
     obstacle(object, time, theme) {
@@ -585,7 +942,21 @@
       if (object.type === 'train') {
         const color = theme.colors[(object.lane + 1) % 4];
         const hullHeight = shape.height - 0.17;
-        this.box(x, hullHeight / 2, z + shape.length / 2, w, hullHeight, shape.length, color);
+        this.add(
+          3,
+          x,
+          hullHeight / 2,
+          z + shape.length / 2,
+          w,
+          hullHeight,
+          shape.length,
+          color,
+          0,
+          0,
+          0,
+          1,
+          0.65,
+        );
         this.add(
           1,
           x,
@@ -601,7 +972,41 @@
           HALF,
         );
         this.box(x, 0.35, z + shape.length / 2, w * 1.01, 0.35, shape.length, COLORS.navy);
-        this.box(x, 1.66, z + 0.006, w * 0.72, 0.61, 0.018, COLORS.glass);
+        this.add(3, x, 1.66, z + 0.006, w * 0.77, 0.62, 0.045, COLORS.ink);
+        this.add(3, x, 1.66, z - 0.019, w * 0.67, 0.5, 0.026, COLORS.glass, 0, 0, 0, 1, 0.78, 0, 4);
+        this.box(x, 1.65, z - 0.035, 0.027, 0.49, 0.014, COLORS.cream);
+        this.label(x, 2.01, z - 0.014, w * 0.52, 0.12, COLORS.navy, 12 + object.lane, 0.5);
+        this.add(3, x, 0.43, z - 0.009, w * 0.85, 0.14, 0.09, COLORS.ink);
+        this.box(x, 1.22, z - 0.014, w * 0.82, 0.045, 0.021, COLORS.cream);
+        for (let vent = 0; vent < 5; vent++)
+          this.box(x, 0.94 + vent * 0.042, z - 0.014, w * 0.55, 0.015, 0.022, COLORS.navy);
+        for (let roof = 0; roof < 3; roof++) {
+          this.add(
+            3,
+            x,
+            shape.height - 0.1,
+            z + 3 + roof * 5,
+            w * 0.62,
+            0.13,
+            1.1,
+            COLORS.rail,
+            0,
+            0,
+            0,
+            1,
+            0.7,
+          );
+          for (let slit = 0; slit < 4; slit++)
+            this.box(
+              x,
+              shape.height - 0.03,
+              z + 2.65 + roof * 5 + slit * 0.2,
+              w * 0.5,
+              0.01,
+              0.06,
+              COLORS.navy,
+            );
+        }
         this.box(x, 1.98, z + 0.008, w * 0.5, 0.08, 0.02, COLORS.cream);
         this.box(x, 0.62, z + 0.012, w * 0.68, 0.075, 0.024, COLORS.cream);
         for (const side of SIDES) {
@@ -624,11 +1029,62 @@
               0.51,
               1.52,
               COLORS.glass,
+              0,
+              4,
             );
           }
         }
         for (let i = 0; i < 4; i++)
-          this.box(x, 0.15, z + 2 + i * 4, w * 0.78, 0.27, 0.35, COLORS.ink);
+          for (const side of SIDES) {
+            this.add(
+              1,
+              x + side * w * 0.38,
+              0.18,
+              z + 2 + i * 4,
+              0.3,
+              0.085,
+              0.3,
+              COLORS.ink,
+              0,
+              0,
+              HALF,
+              HALF,
+              0.7,
+            );
+            this.add(
+              1,
+              x + side * w * 0.425,
+              0.18,
+              z + 2 + i * 4,
+              0.16,
+              0.016,
+              0.16,
+              COLORS.rail,
+              0,
+              0,
+              HALF,
+              HALF,
+              0.95,
+            );
+            this.box(
+              x + side * (w / 2 + 0.005),
+              0.57,
+              z + 1.8 + i * 4,
+              0.024,
+              0.045,
+              2.4,
+              COLORS.cream,
+            );
+            this.box(
+              x + side * (w / 2 + 0.013),
+              1.05,
+              z + 3.2 + i * 4,
+              0.016,
+              1.35,
+              0.045,
+              COLORS.navy,
+            );
+          }
       } else if (object.type === 'gate') {
         const g = this.geometry.gate;
         for (const side of SIDES) {
@@ -690,6 +1146,23 @@
             Math.sqrt(1 - 0.15 ** 2),
           );
         this.box(x, shape.height - 0.04, z + shape.length / 2, w, 0.08, shape.length, COLORS.cream);
+        for (const side of SIDES)
+          this.add(
+            1,
+            x + side * 0.31,
+            shape.height + 0.035,
+            z + 0.2,
+            0.09,
+            0.06,
+            0.09,
+            COLORS.yellow,
+            0,
+            0,
+            0,
+            1,
+            0.5,
+            0.4,
+          );
       } else if (object.type === 'crate') {
         this.box(
           x,
@@ -734,7 +1207,8 @@
             qz = -HALF * spin,
             qw = HALF * turn;
           this.add(1, x, y, z, 0.29, 0.065, 0.29, COLORS.yellow, qx, qy, qz, qw, 0.9, 0.1);
-          this.add(2, x, y, z, 0.19, 0.19, 0.07, 0xffeb9c, 0, spin, 0, turn, 0.6, 0.05);
+          this.add(4, x, y, z, 0.29, 0.29, 0.29, 0xffe5a0, 0, spin, 0, turn, 0.96, 0.1);
+          this.add(0, x, y, z, 0.18, 0.15, 0.073, 0xffd75c, 0, spin, 0, turn, 0.91, 0.02, 206);
         } else if (object.type === 'shield') {
           this.add(2, x, y, z, 0.4, 0.58, 0.25, COLORS.mint, 0, spin, 0, turn, 0.7, 0.1);
           this.add(0, x, y, z - 0.14, 0.055, 0.3, 0.03, COLORS.white, 0, 0, 0, 1, 0.2, 0.5);
@@ -809,6 +1283,17 @@
         this.limb(hx, kneeY, kneeZ, hx, footY + 0.05, footZ, 0.13, COLORS.navy);
         this.add(3, hx, footY, footZ + 0.035, 0.2, 0.11, 0.32, COLORS.white, 0, 0, 0, 1, 0.5);
         this.box(hx, footY - 0.048, footZ + 0.035, 0.2, 0.025, 0.32, this.color);
+        this.add(3, hx, footY + 0.005, footZ - 0.07, 0.18, 0.073, 0.075, COLORS.navy);
+        for (let lace = 0; lace < 3; lace++)
+          this.box(
+            hx,
+            footY + 0.057,
+            footZ - 0.025 + lace * 0.038,
+            0.1,
+            0.009,
+            0.012,
+            COLORS.cream,
+          );
         const shoulderY = y + 1.1 - crouch * 0.45,
           handY = y + 0.77 - crouch * 0.24 + tuck * 0.12;
         const elbowZ = z - swing * 0.18 + crouch * 0.19;
@@ -936,6 +1421,41 @@
         );
       }
       this.box(bodyX, y + 1.56 - crouch * 0.57, z, 0.45, 0.025, 0.06, COLORS.cream);
+      const chest = y + 1.015 - crouch * 0.39,
+        cap = y + 1.575 - crouch * 0.57;
+      this.add(3, bodyX, chest + 0.03, z - 0.288, 0.22, 0.29, 0.04, this.color, 0, 0, qz, qw, 0.4);
+      this.label(bodyX, chest + 0.05, z - 0.313, 0.17, 0.15, COLORS.ink, 6, 0.08, 0, true);
+      this.box(bodyX, chest - 0.08, z - 0.323, 0.18, 0.014, 0.025, COLORS.rail);
+      for (const side of SIDES) {
+        this.limb(
+          bodyX + side * 0.15,
+          chest + 0.18,
+          z - 0.18,
+          bodyX + side * 0.13,
+          chest - 0.15,
+          z - 0.18,
+          0.035,
+          COLORS.cream,
+        );
+        this.box(bodyX + side * 0.055, cap + 0.007, z - 0.205, 0.025, 0.045, 0.025, this.color);
+        this.add(
+          2,
+          bodyX + side * 0.09,
+          y + head,
+          z - 0.218,
+          0.065,
+          0.065,
+          0.022,
+          0xdba346,
+          0,
+          0,
+          qz,
+          qw,
+          0.3,
+        );
+      }
+      this.add(2, bodyX, cap + 0.068, z, 0.045, 0.025, 0.045, this.color, 0, 0, qz, qw, 0.4);
+      this.box(bodyX, chest - 0.22, z - 0.158, 0.37, 0.027, 0.023, COLORS.cream);
       if (shield)
         for (let i = 0; i < 16; i++) {
           const a = (i * Math.PI) / 8;
@@ -988,6 +1508,13 @@
         game.magnetTime > 0,
       );
       const gl = this.gl;
+      for (const batch of this.batches) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, batch.data, 0, batch.count * STRIDE);
+      }
+      this.pipeline?.shadowPass(this.batches);
+      this.pipeline?.begin();
+      const mode = this.pipeline ? (this.pipeline.hdr ? 0 : 1) : 2;
       gl.disable(gl.DEPTH_TEST);
       gl.depthMask(false);
       gl.useProgram(this.skyProgram);
@@ -995,6 +1522,8 @@
       gl.uniform2f(this.skyUniforms.size, this.canvas.width, this.canvas.height);
       gl.uniform3fv(this.skyUniforms.top, theme.top);
       gl.uniform3fv(this.skyUniforms.bottom, theme.bottom);
+      gl.uniform1f(this.skyUniforms.time, reducedMotion ? 0 : time);
+      gl.uniform1i(this.skyUniforms.mode, mode);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.depthMask(true);
       gl.enable(gl.DEPTH_TEST);
@@ -1005,17 +1534,29 @@
       gl.uniform2f(this.uniforms.view, this.focal, this.width / this.height);
       gl.uniform3fv(this.uniforms.fog, theme.fog);
       gl.uniform1f(this.uniforms.travel, distance % 120);
+      gl.uniform2f(this.uniforms.lighting, theme.light[0], theme.light[1]);
+      gl.uniform3fv(this.uniforms.top, theme.top);
+      gl.uniform3fv(this.uniforms.bottom, theme.bottom);
+      gl.uniform1i(this.uniforms.mode, mode);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.atlas);
+      gl.uniform1i(this.uniforms.atlas, 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.pipeline?.shadow.depth || null);
+      gl.uniform1i(this.uniforms.shadow, 0);
+      gl.uniform1f(this.uniforms.shadows, this.pipeline?.shadows ? 1 : 0);
+      gl.uniform1f(this.uniforms.shadowPixel, 1 / (this.pipeline?.shadowSize || 1));
+      if (this.pipeline) gl.uniformMatrix4fv(this.uniforms.light, false, this.pipeline.light);
       for (const batch of this.batches) {
         gl.bindVertexArray(batch.vao);
-        gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 0, batch.data, 0, batch.count * STRIDE);
-        const vertices = MESHES[batch.kind].length / 6;
+        const vertices = batch.vertices;
         gl.drawArraysInstanced(gl.TRIANGLES, 0, vertices, batch.count);
         this.state.instances += batch.count;
         this.state.triangles += (vertices / 3) * batch.count;
       }
       gl.bindVertexArray(null);
-      this.state.drawCalls = 1 + this.batches.length;
+      this.pipeline?.finish(theme);
+      this.state.drawCalls = 1 + this.batches.length + (this.pipeline?.drawCalls || 0);
       return true;
     }
     project(x, z, elevation = 0) {
@@ -1036,6 +1577,10 @@
         resources: this.resources.length,
         pixels: this.canvas.width * this.canvas.height,
         instanceBytes: this.batches.reduce((sum, batch) => sum + batch.data.byteLength, 0),
+        hdr: !!this.pipeline?.hdr,
+        shadows: !!this.pipeline?.shadows,
+        bloom: !!this.pipeline?.bloom,
+        targetPixels: this.pipeline?.pixels || 0,
         quality: this.quality,
         resolutionScale: this.scale,
       };
