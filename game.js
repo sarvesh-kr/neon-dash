@@ -10,6 +10,7 @@
   const game = new RunnerEngine();
   const geometry = NeonGeometry;
   const renderer3D = window.Neon3D?.create(canvas, geometry) || null;
+  const runnerMotion = renderer3D?.runner.motion || window.NeonMotion.create();
   const gesture = new NeonSwipe();
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   let reducedMotion = motionPreference.matches;
@@ -951,10 +952,11 @@
     ctx.save();
     ctx.translate(p.x, p.y - jumping);
     ctx.scale(scale, scale);
-    const active = game.state === 'running';
+    const motion = runnerMotion.sample(game, ambient, reducedMotion);
+    const active = motion.started;
     NeonCharacter.draw(ctx, {
       color: palettes[runnerColor].color,
-      cycle: active ? game.distance * 0.48 : ambient * 2,
+      cycle: motion.phase,
       jump: viewJump,
       crouch: game.slidePose,
       landing: game.landing / 0.16,
@@ -964,7 +966,7 @@
       active,
       shield: game.shieldTime > 0,
       magnet: game.magnetTime > 0,
-      time: ambient,
+      time: motion.clock,
     });
     ctx.restore();
   }

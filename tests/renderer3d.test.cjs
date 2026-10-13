@@ -2,8 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { GEOMETRY } = require('../engine.js');
+const { GEOMETRY, RunnerEngine } = require('../engine.js');
 const source =
+  fs.readFileSync(require.resolve('../motion.js'), 'utf8') +
+  fs.readFileSync(require.resolve('../runner-model.js'), 'utf8') +
   fs.readFileSync(require.resolve('../render-pipeline.js'), 'utf8') +
   fs.readFileSync(require.resolve('../renderer3d.js'), 'utf8');
 
@@ -189,7 +191,7 @@ test('resize, quality changes, and repeated hide/restore reuse fixed instance bu
     r = h.renderer,
     buffers = r.batches.map((batch) => batch.data);
   assert.ok(r.active);
-  assert.equal(h.live.size, 44);
+  assert.equal(h.live.size, 50);
   for (let i = 0; i < 100; i++) {
     r.resize(i % 2 ? 390 : 1440, i % 2 ? 844 : 900);
     assert.ok(r.stats.pixels <= 1200000);
@@ -197,7 +199,7 @@ test('resize, quality changes, and repeated hide/restore reuse fixed instance bu
     assert.equal(h.live.size, 0);
     assert.equal(r.stats.pixels, 1);
     r.resize(390, 844);
-    assert.equal(h.live.size, 44);
+    assert.equal(h.live.size, 50);
   }
   for (let i = 0; i < buffers.length; i++) assert.equal(r.batches[i].data, buffers[i]);
   r.setQuality('detailed');
@@ -256,7 +258,7 @@ test('context recovery while hidden postpones GPU allocations until visible', ()
   assert.equal(r.released, true);
   h.document.hidden = false;
   r.resize(390, 844);
-  assert.equal(h.live.size, 44);
+  assert.equal(h.live.size, 50);
   assert.equal(r.active, true);
   assert.equal(h.canvas.hidden, false);
 });
@@ -268,7 +270,7 @@ test('a background launch waits for visibility before allocating GPU resources',
   assert.equal(h.renderer.stats.pixels, 1);
   h.document.hidden = false;
   h.renderer.resize(390, 844);
-  assert.equal(h.live.size, 44);
+  assert.equal(h.live.size, 50);
 });
 
 test('HDR targets and quality effects resize without growing the GPU handle pool', () => {
@@ -318,7 +320,118 @@ test('a driver rejecting a float framebuffer retries with LDR and retains 3D', (
   r.resize(390, 844);
   assert.ok(r.active);
   assert.equal(r.stats.hdr, false);
-  assert.equal(h.live.size, 44);
+  assert.equal(h.live.size, 50);
   r.release();
   assert.equal(h.live.size, 0);
+});
+
+function geometryBounds(r) {
+  let low = Infinity,
+    high = -Infinity,
+    left = Infinity,
+    right = -Infinity;
+  for (const batch of r.batches)
+    for (let i = 0; i < batch.count; i++) {
+      const d = batch.data,
+        o = i * 16,
+        qx = d[o + 6],
+        qy = d[o + 7],
+        qz = d[o + 8],
+        qw = d[o + 9];
+      for (let v = 0; v < batch.mesh.length; v += 6) {
+        const x = batch.mesh[v] * d[o + 3],
+          y = batch.mesh[v + 1] * d[o + 4],
+          z = batch.mesh[v + 2] * d[o + 5];
+        const tx = 2 * (qy * z - qz * y),
+          ty = 2 * (qz * x - qx * z),
+          tz = 2 * (qx * y - qy * x);
+        const xx = d[o] + x + qw * tx + qy * tz - qz * ty,
+          yy = d[o + 1] + y + qw * ty + qz * tx - qx * tz;
+        low = Math.min(low, yy);
+        high = Math.max(high, yy);
+        left = Math.min(left, xx);
+        right = Math.max(right, xx);
+      }
+    }
+  return { low, high, left, right };
+}
+test('pause and restored graphics keep exactly the rendered runner and scenery pose', () => {
+  const r = harness().renderer,
+    g = new RunnerEngine(() => 0.4);
+  r.resize(390, 844);
+  g.start('classic');
+  for (let i = 0; i < 70; i++) {
+    g.invulnerable = 100;
+    g.update(1 / 120);
+  }
+  r.render(g, g.objects, g.visualLane, g.jumpHeight, 1, '#72f3cb', 1, 0, false);
+  const data = r.batches.map((b) => b.data.slice(0, b.count * 16)),
+    phase = r.runner.motion.phase;
+  g.pause();
+  r.render(g, g.objects, g.visualLane, g.jumpHeight, 100, '#72f3cb', 1, 0, false);
+  r.batches.forEach((b, i) => assert.deepEqual(b.data.slice(0, b.count * 16), data[i]));
+  r.release();
+  r.resize(390, 844);
+  r.render(g, g.objects, g.visualLane, g.jumpHeight, 100, '#72f3cb', 1, 0, false);
+  r.batches.forEach((b, i) => assert.deepEqual(b.data.slice(0, b.count * 16), data[i]));
+  assert.equal(r.runner.motion.phase, phase);
+});
+test('detailed runner keeps grounded soles above the floor and slides below gate clearance', () => {
+  const r = harness().renderer,
+    g = new RunnerEngine();
+  g.start('classic');
+  for (const slide of [0, 0.25, 0.5, 0.75, 1])
+    for (const phase of [0, 0.7, 1.5, 3, 4.5]) {
+      g.time = 0.7;
+      g.slidePose = slide;
+      g.landing = 0;
+      r.batches.forEach((b) => (b.count = 0));
+      r.runner.motion.sample(g, 0);
+      r.runner.motion.phase = phase;
+      r.runner.draw(g, 1, 0, false, 0);
+      const bounds = geometryBounds(r);
+      assert.ok(
+        bounds.low >= -0.001,
+        'Geometry sinks through the ground: ' + JSON.stringify(bounds),
+      );
+      if (slide === 1)
+        assert.ok(bounds.high < GEOMETRY.gate.clearance, 'Slide geometry exceeds the gate opening');
+    }
+});
+test('bobbing and rotated pickup models remain within their shared vertical collection bounds', () => {
+  const r = harness().renderer;
+  r.motionReduced = false;
+  for (const type of ['coin', 'shield', 'magnet'])
+    for (let i = 0; i < 24; i++) {
+      r.batches.forEach((b) => (b.count = 0));
+      r.obstacle({ type, lane: 1, z: 20, poolIndex: 0 }, i / 3, {});
+      const bounds = geometryBounds(r),
+        shape = GEOMETRY[type];
+      assert.ok(
+        bounds.low >= shape.bottom - 1e-6 && bounds.high <= shape.top + 1e-6,
+        type + ' exceeds pickup bounds',
+      );
+      assert.ok(
+        bounds.left >= -shape.halfWidth - 1e-6 && bounds.right <= shape.halfWidth + 1e-6,
+        type + ' exceeds pickup width',
+      );
+    }
+});
+test('animated districts and detailed models reuse all buffers without overflow', () => {
+  const h = harness(),
+    r = h.renderer,
+    g = new RunnerEngine(() => 0.4),
+    buffers = r.batches.map((b) => b.data);
+  r.resize(390, 844);
+  g.start('rush');
+  for (let i = 0; i < 90; i++) {
+    g.invulnerable = 100;
+    g.update(0.05);
+    if (i % 15 === 0) g.action(i % 30 ? 'slide' : 'jump');
+    r.render(g, g.objects, g.visualLane, g.jumpHeight, g.time, '#72f3cb', i % 3, 0, false);
+    assert.equal(r.stats.overflow, 0);
+    assert.equal(r.stats.resources, 50);
+    assert.ok(r.stats.drawCalls <= 19);
+  }
+  r.batches.forEach((b, i) => assert.equal(b.data, buffers[i]));
 });

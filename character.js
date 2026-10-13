@@ -84,9 +84,14 @@
       ctx.moveTo(side * 17, shoulderY);
       ctx.lineTo(elbowX, elbowY);
       ctx.stroke();
-      ctx.fillStyle = '#cb9b83';
+      ctx.strokeStyle = '#ffcf4e';
+      ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.ellipse(handX, handY, 5, 6, -side * 0.2, 0, Math.PI * 2);
+      ctx.arc(handX, handY + 1, 4, -Math.PI * 0.25, Math.PI * 1.25);
+      ctx.stroke();
+      ctx.fillStyle = '#ffcf4e';
+      ctx.beginPath();
+      ctx.ellipse(handX, handY - 3, 3, 2, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     // Layered bomber jacket, collar, stitching and compact backpack.
@@ -127,11 +132,20 @@
     ctx.fill();
     ctx.fillStyle = color;
     ctx.fillRect(-3, shoulderY + 9, 6, 3);
+    ctx.fillStyle = '#d5e6ee';
+    ctx.font = 'bold 6px Arial';
+    ctx.fillText('ND', -5, shoulderY + 14);
+    ctx.strokeStyle = '#8197b8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-9, shoulderY + 19);
+    ctx.lineTo(9, shoulderY + 19);
+    ctx.stroke();
 
     // Neck, sculpted hair, cap and headphones give the silhouette a clear identity.
-    ctx.fillStyle = '#ba8875';
+    ctx.fillStyle = '#e9a62f';
     ctx.fillRect(-6, headY + 24, 12, 9);
-    ctx.fillStyle = '#d3a089';
+    ctx.fillStyle = '#ffcf4e';
     ctx.beginPath();
     ctx.roundRect(-13, headY + 5, 26, 26, 9);
     ctx.fill();

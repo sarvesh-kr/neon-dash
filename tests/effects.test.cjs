@@ -12,6 +12,13 @@ test('particles copy projection targets and stay bounded through repeated emissi
   effects.step(0.05);
   const positions = [];
   effects.draw({
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    closePath() {},
+    fill() {},
+    ellipse() {},
+    stroke() {},
     set globalAlpha(value) {},
     set fillStyle(value) {},
     fillRect(x, y) {

@@ -108,9 +108,16 @@
         base=mix(base,vec3(0.9,0.15,0.35),smoothstep(0.3,0.6,rings));
         base=mix(base,vec3(0.02,0.65,0.6),1.0-smoothstep(0.03,0.045,abs(uv.y-uv.x*0.6+0.12)));
       }
+      if(material>7.5 && material<9.5) {
+        float weave=sin(vLocal.x*110.0)*sin(vLocal.y*110.0);
+        float detail=1.0-smoothstep(0.2,0.9,max(fwidth(vLocal.x),fwidth(vLocal.y))*110.0);
+        base*=1.0-weave*detail*0.035;
+      }
       if(material>=100.0) {
         float glyph=mod(material,100.0);
-        vec2 uv=(vec2(mod(glyph,4.0),3.0-floor(glyph/4.0))+clamp(vLocal.xy+0.5,0.015,0.985))/4.0;
+        vec2 glyphUV=clamp(vLocal.xy+0.5,0.015,0.985);
+        if(vLocal.z>0.49)glyphUV.x=1.0-glyphUV.x;
+        vec2 uv=(vec2(mod(glyph,4.0),3.0-floor(glyph/4.0))+glyphUV)/4.0;
         float ink=texture(uAtlas,uv).a;
         base=mix(base,material>=200.0?base*0.12:vec3(1.0),ink);
       }
@@ -226,6 +233,90 @@
           vertex(bx * 0.5, side * 0.5, bz * 0.5, 0, side, 0);
         }
       }
+    } else if (kind === 'turned') {
+      const profile = [
+        [-0.5, 0.41],
+        [-0.46, 0.48],
+        [-0.38, 0.5],
+        [0.38, 0.5],
+        [0.46, 0.48],
+        [0.5, 0.41],
+      ];
+      for (let row = 0; row < profile.length - 1; row++)
+        for (let col = 0; col < 24; col++) {
+          const dy = profile[row + 1][0] - profile[row][0],
+            dr = profile[row + 1][1] - profile[row][1],
+            length = Math.hypot(dy, dr);
+          for (const [u, v] of [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 0],
+            [1, 1],
+            [0, 1],
+          ]) {
+            const a = ((col + v) * Math.PI) / 12,
+              [y, r] = profile[row + u];
+            vertex(
+              Math.cos(a) * r,
+              y,
+              Math.sin(a) * r,
+              (Math.cos(a) * dy) / length,
+              -dr / length,
+              (Math.sin(a) * dy) / length,
+            );
+          }
+        }
+      for (const side of SIDES)
+        for (let i = 0; i < 24; i++) {
+          const a = (i * Math.PI) / 12,
+            b = ((i + 1) * Math.PI) / 12;
+          vertex(0, side * 0.5, 0, 0, side, 0);
+          vertex(Math.cos(a) * 0.41, side * 0.5, Math.sin(a) * 0.41, 0, side, 0);
+          vertex(Math.cos(b) * 0.41, side * 0.5, Math.sin(b) * 0.41, 0, side, 0);
+        }
+    } else if (kind === 'grip') {
+      // Molded C-shaped toy hands, including capped ends of the opening.
+      for (let ring = 0; ring < 18; ring++)
+        for (let tube = 0; tube < 8; tube++)
+          for (const [u, v] of [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 0],
+            [1, 1],
+            [0, 1],
+          ]) {
+            const a = Math.PI / 4 + ((ring + u) * Math.PI) / 12,
+              b = ((tube + v) * Math.PI) / 4,
+              r = 0.35 + 0.15 * Math.cos(b);
+            vertex(
+              Math.cos(a) * r,
+              Math.sin(a) * r,
+              Math.sin(b) * 0.15,
+              Math.cos(a) * Math.cos(b),
+              Math.sin(a) * Math.cos(b),
+              Math.sin(b),
+            );
+          }
+      for (const side of SIDES)
+        for (let i = 0; i < 8; i++) {
+          const a = side < 0 ? Math.PI / 4 : (Math.PI * 7) / 4,
+            b = (i * Math.PI) / 4,
+            c = ((i + 1) * Math.PI) / 4;
+          const nx = -Math.sin(a) * side,
+            ny = Math.cos(a) * side;
+          vertex(Math.cos(a) * 0.35, Math.sin(a) * 0.35, 0, nx, ny, 0);
+          for (const angle of [b, c])
+            vertex(
+              Math.cos(a) * (0.35 + 0.15 * Math.cos(angle)),
+              Math.sin(a) * (0.35 + 0.15 * Math.cos(angle)),
+              Math.sin(angle) * 0.15,
+              nx,
+              ny,
+              0,
+            );
+        }
     } else if (kind === 'torus') {
       for (let ring = 0; ring < 24; ring++)
         for (let tube = 0; tube < 8; tube++)
@@ -277,6 +368,8 @@
     sphere: mesh('sphere'),
     rounded: mesh('rounded'),
     torus: mesh('torus'),
+    turned: mesh('turned'),
+    grip: mesh('grip'),
   };
   const PROFILES = Array.from({ length: 64 }, (_, i) => ({
     height: 2.7 + ((i * 17) % 23) * 0.18,
@@ -288,6 +381,8 @@
   class Renderer {
     constructor(surface, geometry) {
       this.geometry = geometry;
+      if (!window.NeonRunnerModel) throw new Error('Runner model unavailable');
+      this.runner = window.NeonRunnerModel.create(this);
       this.canvas = document.createElement('canvas');
       this.canvas.className = 'world-canvas';
       this.canvas.width = this.canvas.height = 1;
@@ -308,8 +403,11 @@
         ['sphere', 384],
         ['rounded', 256],
         ['torus', 256],
+        ['turned', 64],
+        ['grip', 32],
       ].map(([kind, capacity]) => ({
         kind,
+        mesh: MESHES[kind],
         capacity,
         data: new Float32Array(capacity * STRIDE),
         count: 0,
@@ -333,6 +431,7 @@
       this.disabled = false;
       this.state = { drawCalls: 0, instances: 0, triangles: 0, overflow: 0 };
       this.pose = { lane: 1, jump: 0, crouch: 0, height: geometry.runner.height };
+
       try {
         if (document.hidden) this.released = true;
         else this.initialize();
@@ -420,12 +519,12 @@
       };
       this.skyVAO = this.resource('VertexArray', gl.createVertexArray());
       for (const batch of this.batches) {
-        batch.vertices = MESHES[batch.kind].length / 6;
+        batch.vertices = batch.mesh.length / 6;
         batch.vao = this.resource('VertexArray', gl.createVertexArray());
         gl.bindVertexArray(batch.vao);
         const vertices = this.resource('Buffer', gl.createBuffer());
         gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
-        gl.bufferData(gl.ARRAY_BUFFER, MESHES[batch.kind], gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, batch.mesh, gl.STATIC_DRAW);
         for (let i = 0; i < 2; i++) {
           gl.enableVertexAttribArray(i);
           gl.vertexAttribPointer(i, 3, gl.FLOAT, false, 24, i * 12);
@@ -744,13 +843,17 @@
         }
       } else if (district === 1) {
         // Lantern strings and arcade storefronts.
+        this.box(side * 2.6, 3.04, z - 0.3, 0.04, 0.04, 4.9, COLORS.navy);
         for (let lamp = 0; lamp < 3; lamp++) {
-          this.box(side * 2.6, 2.77, z - 1.7 + lamp * 1.4, 0.025, 0.5, 0.025, COLORS.navy);
+          const phase = this.motionTime * 1.2 + index * 0.7 + lamp;
+          const sway = this.motionReduced ? 0 : Math.sin(phase) * 0.045,
+            zz = z - 1.7 + lamp * 1.4;
+          this.limb(side * 2.6, 3.04, zz, side * 2.6 + sway, 2.66, zz, 0.013, COLORS.navy);
           this.add(
             2,
-            side * 2.6,
+            side * 2.6 + sway,
             2.49,
-            z - 1.7 + lamp * 1.4,
+            zz,
             0.28,
             0.39,
             0.28,
@@ -760,8 +863,10 @@
             0,
             1,
             0.3,
-            0.6,
+            this.motionReduced ? 0.52 : 0.52 + Math.sin(phase * 2) * 0.035,
           );
+          for (const end of SIDES)
+            this.add(1, side * 2.6 + sway, 2.49 + end * 0.175, zz, 0.13, 0.027, 0.13, COLORS.navy);
         }
         this.add(3, side * 2.65, 0.59, z + 2.0, 0.47, 1.17, 0.45, COLORS.purple);
         this.box(side * 2.39, 0.79, z + 2, 0.025, 0.4, 0.32, COLORS.glass, 0.3, 4);
@@ -775,7 +880,9 @@
             side * 2.64,
             2.09,
             z + 2.4,
-            side * 2.64 + Math.cos(a) * 0.7,
+            side * 2.64 +
+              Math.cos(a) * 0.7 +
+              (this.motionReduced ? 0 : Math.sin(this.motionTime * 1.2 + index * 0.91) * 0.04),
             1.86,
             z + 2.4 + Math.sin(a) * 0.7,
             0.13,
@@ -822,6 +929,9 @@
           const z = i * 12 + 6 - shift,
             x = side * (4.6 + profile.width * 0.12),
             h = profile.height;
+          const wind = this.motionReduced
+            ? 0
+            : Math.sin(this.motionTime * 1.2 + (tile + i) * 0.91) * 0.035;
           const color = theme.colors[profile.color];
           this.box(x, h / 2, z, profile.width, h, 8.3, color, 0, 1);
           this.box(x, h + 0.11, z, profile.width + 0.18, 0.22, 8.5, COLORS.cream);
@@ -890,10 +1000,10 @@
               this.box(side * 2.55, 0.46, z + 3.2, 0.65, 0.68, 0.75, COLORS.coral);
               this.add(1, side * 2.55, 1.2, z + 3.2, 0.12, 1.1, 0.12, 0x8d6650);
               this.limb(side * 2.55, 1.32, z + 3.2, side * 2.82, 1.83, z + 3.42, 0.08, 0x8d6650);
-              this.add(2, side * 2.55, 2.05, z + 3.2, 0.89, 1.13, 0.91, 0x55a77e);
-              this.add(2, side * 2.79, 1.84, z + 3.45, 0.76, 0.84, 0.71, 0x8bc78b);
-              this.add(2, side * 2.31, 1.9, z + 3.05, 0.69, 0.78, 0.73, 0x6fb77c);
-              this.add(2, side * 2.58, 2.48, z + 3.27, 0.61, 0.62, 0.58, 0xa2cd92);
+              this.add(2, side * 2.55 + wind, 2.05, z + 3.2, 0.89, 1.13, 0.91, 0x55a77e);
+              this.add(2, side * 2.79 + wind * 0.7, 1.84, z + 3.45, 0.76, 0.84, 0.71, 0x8bc78b);
+              this.add(2, side * 2.31 + wind * 0.8, 1.9, z + 3.05, 0.69, 0.78, 0.73, 0x6fb77c);
+              this.add(2, side * 2.58 + wind * 1.2, 2.48, z + 3.27, 0.61, 0.62, 0.58, 0xa2cd92);
             } else {
               this.box(side * 2.5, 1.35, z + 3.6, 0.055, 2.7, 0.055, COLORS.navy);
               this.box(side * 2.38, 2.75, z + 3.6, 0.4, 0.09, 0.14, COLORS.navy);
@@ -931,6 +1041,26 @@
         this.box(0, 4.9, z - 0.23, 4.5, 0.1, 0.03, COLORS.yellow, 0.6);
         this.label(0, 5.13, z - 0.25, 2.8, 0.31, COLORS.navy, 3, 0.4);
       }
+    }
+    pickupPart(kind, x, y, z, dx, dy, dz, sx, sy, sz, color, spin, turn, emission = 0) {
+      const c = turn * turn - spin * spin,
+        s = 2 * spin * turn;
+      this.add(
+        kind,
+        x + dx * c + dz * s,
+        y + dy,
+        z - dx * s + dz * c,
+        sx,
+        sy,
+        sz,
+        color,
+        0,
+        spin,
+        0,
+        turn,
+        0.45,
+        emission,
+      );
     }
     obstacle(object, time, theme) {
       const shape = this.geometry[object.type],
@@ -1036,6 +1166,9 @@
         }
         for (let i = 0; i < 4; i++)
           for (const side of SIDES) {
+            const wheel = this.travelDistance / 0.15,
+              spin = Math.sin(wheel / 2),
+              turn = Math.cos(wheel / 2);
             this.add(
               1,
               x + side * w * 0.38,
@@ -1045,10 +1178,10 @@
               0.085,
               0.3,
               COLORS.ink,
-              0,
-              0,
-              HALF,
-              HALF,
+              spin * HALF,
+              -spin * HALF,
+              turn * HALF,
+              turn * HALF,
               0.7,
             );
             this.add(
@@ -1060,11 +1193,41 @@
               0.016,
               0.16,
               COLORS.rail,
-              0,
-              0,
-              HALF,
-              HALF,
+              spin * HALF,
+              -spin * HALF,
+              turn * HALF,
+              turn * HALF,
               0.95,
+            );
+            this.add(
+              0,
+              x + side * w * 0.441,
+              0.18,
+              z + 2 + i * 4,
+              0.012,
+              0.13,
+              0.022,
+              COLORS.cream,
+              spin,
+              0,
+              0,
+              turn,
+              0.6,
+            );
+            this.add(
+              0,
+              x + side * w * 0.442,
+              0.18,
+              z + 2 + i * 4,
+              0.012,
+              0.022,
+              0.13,
+              COLORS.cream,
+              spin,
+              0,
+              0,
+              turn,
+              0.6,
             );
             this.box(
               x + side * (w / 2 + 0.005),
@@ -1196,8 +1359,11 @@
         this.box(x, shape.height * 0.25, z + 0.014, w, 0.07, 0.03, 0x8e6347);
         this.box(x, shape.height * 0.75, z + 0.014, w, 0.07, 0.03, 0x8e6347);
       } else {
-        const y = (shape.bottom + shape.top) / 2;
-        const angle = time * 2.8 + z * 0.03,
+        const seed = object.poolIndex ?? object.lane;
+        const y =
+          (shape.bottom + shape.top) / 2 +
+          (this.motionReduced ? 0 : Math.sin(time * 3 + seed * 1.7) * 0.018);
+        const angle = this.motionReduced ? 0 : time * 2.8 + seed * 0.73,
           spin = Math.sin(angle / 2),
           turn = Math.cos(angle / 2);
         if (object.type === 'coin') {
@@ -1210,15 +1376,92 @@
           this.add(4, x, y, z, 0.29, 0.29, 0.29, 0xffe5a0, 0, spin, 0, turn, 0.96, 0.1);
           this.add(0, x, y, z, 0.18, 0.15, 0.073, 0xffd75c, 0, spin, 0, turn, 0.91, 0.02, 206);
         } else if (object.type === 'shield') {
-          this.add(2, x, y, z, 0.4, 0.58, 0.25, COLORS.mint, 0, spin, 0, turn, 0.7, 0.1);
-          this.add(0, x, y, z - 0.14, 0.055, 0.3, 0.03, COLORS.white, 0, 0, 0, 1, 0.2, 0.5);
-          this.box(x, y + 0.04, z - 0.15, 0.22, 0.05, 0.025, COLORS.white, 0.5);
+          this.add(2, x, y, z, 0.4, 0.58, 0.25, COLORS.mint, 0, spin, 0, turn, 0.7, 0.12);
+          for (const side of SIDES) {
+            this.pickupPart(
+              4,
+              x,
+              y,
+              z,
+              0,
+              0,
+              side * 0.096,
+              0.32,
+              0.54,
+              0.2,
+              COLORS.white,
+              spin,
+              turn,
+              0.1,
+            );
+            this.pickupPart(
+              0,
+              x,
+              y,
+              z,
+              0,
+              0,
+              side * 0.15,
+              0.055,
+              0.3,
+              0.026,
+              COLORS.white,
+              spin,
+              turn,
+              0.3,
+            );
+            this.pickupPart(
+              0,
+              x,
+              y,
+              z,
+              0,
+              0.04,
+              side * 0.15,
+              0.22,
+              0.05,
+              0.026,
+              COLORS.white,
+              spin,
+              turn,
+              0.3,
+            );
+          }
         } else if (object.type === 'magnet') {
-          this.box(x - 0.13, y + 0.09, z, 0.11, 0.34, 0.17, COLORS.blue);
-          this.box(x + 0.13, y + 0.09, z, 0.11, 0.34, 0.17, COLORS.blue);
-          this.box(x, y - 0.09, z, 0.31, 0.11, 0.17, COLORS.blue);
-          this.box(x - 0.13, y + 0.23, z, 0.11, 0.09, 0.17, COLORS.cream, 0.5);
-          this.box(x + 0.13, y + 0.23, z, 0.11, 0.09, 0.17, COLORS.cream, 0.5);
+          for (const side of SIDES) {
+            this.pickupPart(
+              3,
+              x,
+              y,
+              z,
+              side * 0.13,
+              0.09,
+              0,
+              0.11,
+              0.34,
+              0.17,
+              COLORS.blue,
+              spin,
+              turn,
+            );
+            this.pickupPart(
+              3,
+              x,
+              y,
+              z,
+              side * 0.13,
+              0.23,
+              0,
+              0.11,
+              0.09,
+              0.17,
+              COLORS.cream,
+              spin,
+              turn,
+              0.2,
+            );
+          }
+          this.pickupPart(3, x, y, z, 0, -0.09, 0, 0.31, 0.11, 0.17, COLORS.blue, spin, turn);
         }
       }
     }
@@ -1254,234 +1497,6 @@
         0.5,
       );
     }
-    avatar(lane, jump, crouch, landing, lean, cycle, active, shield, magnet) {
-      const x = lane - 1,
-        z = this.geometry.runner.z;
-      const stride = active && !jump ? Math.sin(cycle) : 0,
-        tuck = Math.min(1, jump / 1.2);
-      const bob = active && !jump ? Math.abs(Math.cos(cycle)) * 0.018 : 0;
-      const y = jump + bob - landing * 0.045;
-      const angle = -Math.max(-0.2, Math.min(0.2, lean));
-      const bodyX = x + Math.sin(-angle) * 0.3;
-      const hip = 0.67 - crouch * 0.25,
-        head = 1.42 - crouch * 0.56;
-      this.pose.lane = lane;
-      this.pose.jump = jump;
-      this.pose.crouch = crouch;
-      this.pose.height =
-        this.geometry.runner.height -
-        crouch * (this.geometry.runner.height - this.geometry.runner.crouchHeight);
-      this.add(2, x, 0.014, z, 0.65 * (1 - jump * 0.12), 0.018, 0.6, 0x354957, 0, 0, 0, 1, 0);
-      for (const side of SIDES) {
-        const swing = stride * side,
-          hx = x + side * 0.1;
-        const kneeY = y + 0.36 - crouch * 0.08 + tuck * 0.1;
-        const kneeZ = z + swing * 0.18 + crouch * 0.26;
-        const footY = y + 0.095 + Math.max(0, -swing) * 0.1 + tuck * 0.14;
-        const footZ = z - swing * 0.22 + crouch * 0.36 - tuck * 0.12;
-        this.limb(hx, y + hip, z, hx, kneeY, kneeZ, 0.14, COLORS.navy);
-        this.limb(hx, kneeY, kneeZ, hx, footY + 0.05, footZ, 0.13, COLORS.navy);
-        this.add(3, hx, footY, footZ + 0.035, 0.2, 0.11, 0.32, COLORS.white, 0, 0, 0, 1, 0.5);
-        this.box(hx, footY - 0.048, footZ + 0.035, 0.2, 0.025, 0.32, this.color);
-        this.add(3, hx, footY + 0.005, footZ - 0.07, 0.18, 0.073, 0.075, COLORS.navy);
-        for (let lace = 0; lace < 3; lace++)
-          this.box(
-            hx,
-            footY + 0.057,
-            footZ - 0.025 + lace * 0.038,
-            0.1,
-            0.009,
-            0.012,
-            COLORS.cream,
-          );
-        const shoulderY = y + 1.1 - crouch * 0.45,
-          handY = y + 0.77 - crouch * 0.24 + tuck * 0.12;
-        const elbowZ = z - swing * 0.18 + crouch * 0.19;
-        const handZ = z - swing * 0.27 + crouch * 0.33;
-        this.limb(
-          bodyX + side * 0.22,
-          shoulderY,
-          z,
-          bodyX + side * 0.29,
-          handY + 0.15,
-          elbowZ,
-          0.14,
-          this.color,
-        );
-        this.limb(
-          bodyX + side * 0.29,
-          handY + 0.15,
-          elbowZ,
-          bodyX + side * 0.26,
-          handY,
-          handZ,
-          0.13,
-          this.color,
-        );
-        this.add(
-          2,
-          bodyX + side * 0.26,
-          handY,
-          handZ,
-          0.14,
-          0.16,
-          0.14,
-          COLORS.skin,
-          0,
-          0,
-          0,
-          1,
-          0.65,
-        );
-      }
-      const qz = Math.sin(angle / 2),
-        qw = Math.cos(angle / 2);
-      this.add(
-        3,
-        bodyX,
-        y + 1.015 - crouch * 0.39,
-        z,
-        0.43,
-        0.43,
-        0.3,
-        this.color,
-        0,
-        0,
-        qz,
-        qw,
-        0.8,
-      );
-      this.add(3, x, y + hip, z, 0.33, 0.19, 0.28, COLORS.navy, 0, 0, qz, qw, 0.4);
-      this.add(
-        3,
-        bodyX,
-        y + 1.02 - crouch * 0.39,
-        z - 0.2,
-        0.25,
-        0.33,
-        0.15,
-        COLORS.ink,
-        0,
-        0,
-        qz,
-        qw,
-        0.4,
-      );
-      this.box(bodyX, y + 0.96 - crouch * 0.39, z - 0.28, 0.19, 0.1, 0.025, COLORS.blue);
-      this.box(bodyX, y + 1.11 - crouch * 0.39, z - 0.28, 0.075, 0.034, 0.03, this.color);
-      this.add(1, bodyX, y + 1.28 - crouch * 0.52, z, 0.12, 0.12, 0.12, COLORS.skin);
-      this.add(1, bodyX, y + head, z, 0.43, 0.3, 0.43, COLORS.skin, 0, 0, qz, qw, 0.65);
-      this.add(
-        2,
-        bodyX,
-        y + 1.575 - crouch * 0.57,
-        z,
-        0.45,
-        0.14,
-        0.45,
-        COLORS.navy,
-        0,
-        0,
-        qz,
-        qw,
-        0.8,
-      );
-      this.box(bodyX, y + 1.55 - crouch * 0.57, z + 0.14, 0.46, 0.055, 0.38, COLORS.navy);
-      this.box(bodyX, y + 1.59 - crouch * 0.57, z - 0.2, 0.16, 0.045, 0.03, this.color);
-      for (const side of SIDES) {
-        this.add(
-          1,
-          bodyX + side * 0.22,
-          y + head,
-          z,
-          0.16,
-          0.055,
-          0.16,
-          COLORS.ink,
-          0,
-          0,
-          HALF,
-          HALF,
-          0.65,
-        );
-        this.add(
-          1,
-          bodyX + side * 0.254,
-          y + head,
-          z,
-          0.12,
-          0.025,
-          0.12,
-          this.color,
-          0,
-          0,
-          HALF,
-          HALF,
-          0.8,
-        );
-      }
-      this.box(bodyX, y + 1.56 - crouch * 0.57, z, 0.45, 0.025, 0.06, COLORS.cream);
-      const chest = y + 1.015 - crouch * 0.39,
-        cap = y + 1.575 - crouch * 0.57;
-      this.add(3, bodyX, chest + 0.03, z - 0.288, 0.22, 0.29, 0.04, this.color, 0, 0, qz, qw, 0.4);
-      this.label(bodyX, chest + 0.05, z - 0.313, 0.17, 0.15, COLORS.ink, 6, 0.08, 0, true);
-      this.box(bodyX, chest - 0.08, z - 0.323, 0.18, 0.014, 0.025, COLORS.rail);
-      for (const side of SIDES) {
-        this.limb(
-          bodyX + side * 0.15,
-          chest + 0.18,
-          z - 0.18,
-          bodyX + side * 0.13,
-          chest - 0.15,
-          z - 0.18,
-          0.035,
-          COLORS.cream,
-        );
-        this.box(bodyX + side * 0.055, cap + 0.007, z - 0.205, 0.025, 0.045, 0.025, this.color);
-        this.add(
-          2,
-          bodyX + side * 0.09,
-          y + head,
-          z - 0.218,
-          0.065,
-          0.065,
-          0.022,
-          0xdba346,
-          0,
-          0,
-          qz,
-          qw,
-          0.3,
-        );
-      }
-      this.add(2, bodyX, cap + 0.068, z, 0.045, 0.025, 0.045, this.color, 0, 0, qz, qw, 0.4);
-      this.box(bodyX, chest - 0.22, z - 0.158, 0.37, 0.027, 0.023, COLORS.cream);
-      if (shield)
-        for (let i = 0; i < 16; i++) {
-          const a = (i * Math.PI) / 8;
-          this.add(
-            2,
-            x + Math.cos(a) * 0.47,
-            y + 0.8 + Math.sin(a) * 0.83,
-            z - 0.1,
-            0.045,
-            0.065,
-            0.04,
-            COLORS.mint,
-            0,
-            0,
-            0,
-            1,
-            0.2,
-            0.7,
-          );
-        }
-      if (magnet)
-        for (const side of SIDES) {
-          this.box(x + side * 0.44, y + 0.8, z, 0.045, 0.25, 0.06, COLORS.blue, 0.6);
-          this.box(x + side * 0.38, y + 0.96, z, 0.14, 0.045, 0.06, COLORS.blue, 0.6);
-        }
-    }
     render(game, objects, lane, jump, time, color, district, impact, reducedMotion) {
       if (!this.active || this.released) return false;
       const theme = THEMES[district % 3];
@@ -1493,20 +1508,14 @@
       this.pointCursor = 0;
       this.state.drawCalls = this.state.instances = this.state.triangles = this.state.overflow = 0;
       for (const batch of this.batches) batch.count = 0;
-      const distance = game.state === 'ready' ? time * 3 : game.distance;
+      const distance = game.state === 'ready' ? (reducedMotion ? 0 : time * 3) : game.distance;
+      this.runner.motion.sample(game, time, reducedMotion);
+      this.motionTime = this.runner.motion.clock;
+      this.motionReduced = !!reducedMotion;
+      this.travelDistance = distance;
       this.world(distance, theme);
-      for (const object of objects) this.obstacle(object, time, theme);
-      this.avatar(
-        lane,
-        jump,
-        game.slidePose,
-        game.landing / 0.16,
-        game.laneVelocity * 0.018,
-        game.state === 'running' ? game.distance * 0.48 : time * 2,
-        game.state === 'running',
-        game.shieldTime > 0,
-        game.magnetTime > 0,
-      );
+      for (const object of objects) this.obstacle(object, this.motionTime, theme);
+      this.runner.draw(game, lane, jump, reducedMotion, impact);
       const gl = this.gl;
       for (const batch of this.batches) {
         gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
