@@ -2,12 +2,14 @@
   'use strict';
   const $ = (id) => document.getElementById(id);
   const canvas = $('game'),
-    ctx = canvas.getContext('2d', { alpha: false });
+    ctx = canvas.getContext('2d', { alpha: true });
   const gameFrame = canvas.closest('.game-frame');
   const pauseButton = $('pause-button');
+  const graphicsQuality = $('graphics-quality');
   const overlayTitle = $('overlay-title');
   const game = new RunnerEngine();
   const geometry = NeonGeometry;
+  const renderer3D = window.Neon3D?.create(canvas, geometry) || null;
   const gesture = new NeonSwipe();
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   let reducedMotion = motionPreference.matches;
@@ -501,6 +503,7 @@
   const projectionPoints = Array.from({ length: 4096 }, () => ({ x: 0, y: 0, scale: 0 }));
   let projectionCursor = 0;
   function project(x, z, elevation = 0) {
+    if (renderer3D?.active) return renderer3D.project(x, z, elevation);
     const scale = 17 / (Math.max(geometry.nearClip, z) + 17);
     const point = projectionPoints[projectionCursor];
     projectionCursor = (projectionCursor + 1) % projectionPoints.length;
@@ -551,6 +554,10 @@
   const backdrop = document.createElement('canvas');
   let fogGradient, vignetteGradient;
   function cacheScenery(dpr) {
+    if (renderer3D?.active) {
+      backdrop.width = backdrop.height = 0;
+      return;
+    }
     backdrop.width = canvas.width;
     backdrop.height = canvas.height;
     const ctx = backdrop.getContext('2d', { alpha: false });
@@ -969,6 +976,26 @@
   ].sort((a, b) => b.z - a.z);
   function render() {
     projectionCursor = 0;
+    if (renderer3D?.active) {
+      renderer3D.render(
+        game,
+        game.state === 'ready' ? demoObjects : game.objects,
+        viewLane,
+        viewJump,
+        ambient,
+        palettes[runnerColor].color,
+        districtIndex,
+        impact,
+        reducedMotion,
+      );
+      ctx.clearRect(0, 0, width, height);
+      NeonEffects.draw(ctx);
+      if (impact > 0) {
+        ctx.fillStyle = `rgba(255,210,190,${impact * 0.4})`;
+        ctx.fillRect(0, 0, width, height);
+      }
+      return;
+    }
     ctx.save();
     if (!reducedMotion && impact > 0)
       ctx.translate(Math.sin(ambient * 95) * impact * 10, Math.cos(ambient * 70) * impact * 6);
@@ -999,38 +1026,50 @@
     if (width !== rect.width || height !== rect.height) gesture.reset();
     width = rect.width;
     height = rect.height;
-    // Match the forgiving torso core to its visible CSS size in either aspect ratio.
-    game.runnerHalfWidth = Math.max(
-      0.08,
-      Math.min(
-        0.4,
-        (geometry.runner.coreHalfWidth * height * 0.19 * geometry.runner.height) /
-          (geometry.runner.artHeight * width * 0.27),
-      ),
-    );
     // Bound raster work on high-density phones and large desktop displays.
     const dpr = Math.min(2, window.devicePixelRatio || 1, Math.sqrt(1800000 / (width * height)));
-    const pixelWidth = Math.round(width * dpr),
-      pixelHeight = Math.round(height * dpr);
+    const worldChanged = renderer3D?.resize(width, height) || false;
+    // Match the forgiving torso core to its visible CSS size in either aspect ratio.
+    game.runnerHalfWidth = renderer3D?.active
+      ? geometry.runner.halfWidth
+      : Math.max(
+          0.08,
+          Math.min(
+            0.4,
+            (geometry.runner.coreHalfWidth * height * 0.19 * geometry.runner.height) /
+              (geometry.runner.artHeight * width * 0.27),
+          ),
+        );
+    gameFrame.classList.toggle('has-3d', !!renderer3D?.active);
+    graphicsQuality.disabled = !renderer3D?.active;
+    $('graphics-note').textContent = renderer3D?.active
+      ? 'Auto balances detail and smooth play.'
+      : 'Classic graphics are available on this device.';
+
+    // The transparent effect layer needs fewer pixels than the 3D scene.
+    const overlayDpr = renderer3D?.active ? Math.min(1, dpr) : dpr;
+    const pixelWidth = Math.round(width * overlayDpr),
+      pixelHeight = Math.round(height * overlayDpr);
     if (
       canvas.width === pixelWidth &&
       canvas.height === pixelHeight &&
-      backdrop.width === pixelWidth &&
-      backdrop.height === pixelHeight
+      !worldChanged &&
+      (renderer3D?.active || (backdrop.width === pixelWidth && backdrop.height === pixelHeight))
     )
       return;
     canvas.width = pixelWidth;
     canvas.height = pixelHeight;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(overlayDpr, 0, 0, overlayDpr, 0, 0);
     NeonEffects.reset();
     particleCount = 0;
     impact = 0;
-    cachedDpr = dpr;
-    cacheScenery(dpr);
+    cachedDpr = overlayDpr;
+    cacheScenery(overlayDpr);
     render();
   }
   function releaseRendering() {
     // Keep simulation and scores; release pixel buffers that cannot be displayed.
+    renderer3D?.release();
     backdrop.width = backdrop.height = 0;
     canvas.width = canvas.height = 1;
     fogGradient = vignetteGradient = null;
@@ -1063,8 +1102,10 @@
       animationId = 0;
       return;
     }
-    const dt = Math.min(0.1, lastTime ? (timestamp - lastTime) / 1000 : 0);
+    const frameDuration = lastTime ? (timestamp - lastTime) / 1000 : 0;
+    const dt = Math.min(0.1, frameDuration);
     lastTime = timestamp;
+    renderer3D?.observeFrame(Math.min(0.25, frameDuration), game.state === 'running');
     if (game.state !== 'paused' && game.state !== 'over') ambient += dt;
     if (game.state === 'running') {
       accumulator = Math.min(0.1, accumulator + dt);
@@ -1153,6 +1194,15 @@
   if (motionPreference.addEventListener)
     motionPreference.addEventListener('change', updateMotionPreference);
   else motionPreference.addListener(updateMotionPreference);
+  function graphicsChanged() {
+    if (game.state === 'running') togglePause();
+    drawnState = undefined;
+    resize();
+    scheduleFrame();
+  }
+  if (renderer3D) renderer3D.onChange = graphicsChanged;
+  graphicsQuality.addEventListener('change', () => renderer3D?.setQuality(graphicsQuality.value));
+  graphicsChanged();
   $('header-best').textContent = format(best);
   setColor(runnerColor);
   updateSoundButton();

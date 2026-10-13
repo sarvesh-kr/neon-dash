@@ -1549,3 +1549,66 @@ dialog {
     gap: 0;
   }
 }
+
+.world-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.world-canvas[hidden] {
+  display: none;
+}
+#game {
+  position: relative;
+}
+.graphics-choice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #b2b2bf;
+}
+.graphics-choice select {
+  font: inherit;
+  color: var(--text);
+  background: #252535;
+  border: 1px solid #454054;
+  border-radius: 7px;
+  padding: 8px 12px;
+  max-width: 140px;
+}
+.graphics-choice select:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 3px;
+}
+.graphics-panel .panel-copy {
+  margin: 12px 0 0;
+}
+@media (max-width: 660px) {
+  .graphics-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+.has-3d .district,
+.has-3d .game-bottom {
+  color: #f4f2f9;
+  text-shadow: 0 1px 4px #132641;
+}
+.has-3d .district small {
+  color: #e4e7f0;
+}
+.has-3d .hud > div {
+  background: #14253b99;
+  border: 1px solid #ffffff1a;
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+.has-3d .hud > div > span {
+  color: #f4f2f9;
+}
+
+.has-3d .boost-status {
+  top: calc(158px + env(safe-area-inset-top));
+}

@@ -14,7 +14,7 @@
     <meta name="apple-mobile-web-app-title" content="Neon Dash" />
     <meta
       name="description"
-      content="Play Neon Dash, a free 3D-style endless runner in your browser. Dodge trains, jump obstacles, and collect coins on mobile or desktop. No download needed."
+      content="Play Neon Dash, a free 3D endless runner in your browser. Dodge trains, jump obstacles, and collect coins on mobile or desktop. No download needed."
     />
     <title>Neon Dash — Free Endless Runner Game Online</title>
     <meta itemprop="name" content="Neon Dash" />
@@ -29,7 +29,7 @@
       content="Dodge trains. Chase coins. Beat your best. Play this free neon endless runner on mobile or desktop — no download or account needed."
     />
     <meta property="og:url" content="https://nd.sarvesh.si/" />
-    <meta property="og:image" content="https://nd.sarvesh.si/icons/neon-dash-social.png" />
+    <meta property="og:image" content="https://nd.sarvesh.si/icons/neon-dash-social.png?v=3d-1" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -43,7 +43,7 @@
       name="twitter:description"
       content="Dodge trains. Chase coins. Beat your best. A free browser runner for mobile and desktop. No download or account needed."
     />
-    <meta name="twitter:image" content="https://nd.sarvesh.si/icons/neon-dash-social.png" />
+    <meta name="twitter:image" content="https://nd.sarvesh.si/icons/neon-dash-social.png?v=3d-1" />
     <meta
       name="twitter:image:alt"
       content="Neon Dash's toy runner mascot beside the neon city and three-lane running track."
@@ -52,9 +52,10 @@
     <link rel="icon" type="image/png" sizes="64x64" href="./icons/runner-64.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/runner-apple-touch.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=seo-1" />
-    <noscript><link rel="stylesheet" href="./noscript.css?v=seo-1" /></noscript>
+    <link rel="stylesheet" href="./styles.css?v=3d-1" />
+    <noscript><link rel="stylesheet" href="./noscript.css?v=3d-1" /></noscript>
     <script src="./engine.js?v=production-1" defer></script>
+    <script src="./renderer3d.js?v=3d-1" defer></script>
     <script src="./audio.js?v=production-1" defer></script>
     <script src="./fullscreen.js?v=production-1" defer></script>
     <script src="./character.js?v=production-1" defer></script>
@@ -63,7 +64,7 @@
     <script src="./storage.js?v=production-1" defer></script>
     <script src="./graphics.js?v=production-1" defer></script>
     <script src="./input.js?v=production-1" defer></script>
-    <script src="./game.js?v=production-1" defer></script>
+    <script src="./game.js?v=3d-1" defer></script>
   </head>
   <body class="game-view-expanded">
     <div class="app">
@@ -79,7 +80,7 @@
 
       <main itemscope itemtype="https://schema.org/VideoGame" itemid="https://nd.sarvesh.si/#game">
         <meta itemprop="url" content="https://nd.sarvesh.si/" />
-        <meta itemprop="image" content="https://nd.sarvesh.si/icons/neon-dash-social.png" />
+        <meta itemprop="image" content="https://nd.sarvesh.si/icons/neon-dash-social.png?v=3d-1" />
         <meta itemprop="isAccessibleForFree" content="true" />
         <meta itemprop="inLanguage" content="en" />
         <meta itemprop="gamePlatform" content="Web browser" />
@@ -274,6 +275,18 @@
                 No downloads. No limits.<br />Just a little <strong>main character energy.</strong>
               </p>
             </div>
+            <section class="panel graphics-panel" aria-labelledby="graphics-title">
+              <div class="panel-heading"><h2 id="graphics-title">Your graphics</h2></div>
+              <label class="graphics-choice" for="graphics-quality"
+                >Quality
+                <select id="graphics-quality">
+                  <option value="auto" selected>Auto</option>
+                  <option value="smooth">Smooth</option>
+                  <option value="detailed">Detailed</option>
+                </select>
+              </label>
+              <p class="panel-copy" id="graphics-note">Auto balances detail and smooth play.</p>
+            </section>
           </aside>
         </div>
 

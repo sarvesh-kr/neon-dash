@@ -80,8 +80,8 @@ Home Screen launches automatically fill the app window. The manifest requests fu
 ## Features
 
 - Three difficulty modes: Chill, Classic, and Rush, each with increasing speed and different obstacle spacing.
-- Perspective canvas city with three district palettes, buildings, lights, rail tracks, trains, gates, barriers, and cargo crates.
-- Original articulated runner with headphones, jacket, backpack, independent limbs, running stride, airborne knee tuck, crouch, landing squash, and lane-change lean.
+- Real 3D WebGL2 city with colorful buildings, shop awnings, trees, streetlights, rails, trains, and pickups; three district palettes, sky gradients, sunlight, and distance fog. The existing Canvas 2D artwork remains available as a compatibility fallback.
+- Original 3D plastic-toy runner with rounded jacket and backpack, cap, headphones, articulated arms and legs, running stride, airborne knee tuck, crouch, landing feedback, and lane-change lean.
 - Coin sparkles, landing dust, shield-break feedback, pickup auras, and a brief crash animation. Cosmetic particles and camera shake respect reduced-motion preferences, including changes made while the page is open.
 - Shield and magnet pickups, visible countdowns, a friendlier opening, and collision-specific retry advice.
 - Coin collection and two goals per run: 25 coins and 1,000 meters.
@@ -92,8 +92,8 @@ Home Screen launches automatically fill the app window. The manifest requests fu
 - The play surface suppresses text selection, image dragging, and long-press context menus. Holding still makes no move; each swipe triggers one action. Interrupted gestures reset when paused or restarted.
 - Direct expanded game launch, native fullscreen from Play, and Home Screen app support.
 - Fixed 120 Hz simulation with interpolated character movement, consistent fast lane changes, a short landing jump buffer, and an airborne downward swipe that lands into a slide.
-- Cached scenery, gradients, and collectible sprites; batched track drawing; object sorting only on spawn; reduced distant detail; a bounded canvas resolution; and a 64-particle pool. The animation loop stops when paused or hidden, and after game-over effects settle. Reduced-motion welcome screens stay still. Resuming, restarting, resizing, or changing the runner color redraws as needed.
-- Richer neon halos and soft street reflections use a fixed light atlas instead of live blur filters. The road and fixed rails are baked into the district backdrop. Tiny distant halos are culled.
+- Instanced reusable 3D geometry and procedural surface patterns; five GPU draws per frame, including the sky. Auto graphics adapt resolution after sustained slow frames; Smooth and Detailed are selectable in settings. Canvas 2D fallback uses cached scenery, gradients, collectible sprites, and batched track drawing; object sorting only on spawn; reduced distant detail; a bounded canvas resolution; and a 64-particle pool. The animation loop stops when paused or hidden, and after game-over effects settle. Reduced-motion welcome screens stay still. Resuming, restarting, resizing, or changing the runner color redraws as needed.
+- The 3D scene uses directional and ambient shading, plastic highlights, contact-shadow geometry, anti-aliased edges where the driver supports them, and fog. The Canvas fallback uses cached neon lighting instead of live blur filters.
 - Centered SVG toolbar icons, keyboard activation of focused buttons, named instructions dialogs, and welcome screens that adapt to the game frame's height.
 - Collision checks cover each obstacle's whole body. Lane changes into passing obstacles and slides ending inside gates still collide; successful jump/slide clears count once after passing the hazard.
 - Original procedural game artwork and a neon plastic-toy runner mascot for the game logo, browser tab, and Home Screen icons. No third-party runtime assets, fonts, APIs, or tracking.
@@ -110,16 +110,21 @@ Temporary resources are bounded:
 | --- | --- |
 | Obstacles and collectibles | 128 reusable slots; passed/collected objects return to the pool; restart reuses buffers and resets every flag |
 | Contact checks | Reused queue bounded by those 128 slots; reused motion and intersection scratch records |
-| Drawing coordinates | 4,096 reusable scratch points; particle targets copy coordinates rather than retaining scratch objects |
+| Drawing coordinates | 16 reusable 3D projection points or 4,096 fallback scratch points; particles copy coordinates rather than retaining scratch objects |
+| 3D instance geometry | Fixed 4,096 cube, 384 cylinder, 384 sphere, and 128 rounded-box slots; 319,488 bytes of reusable CPU instance data |
+| 3D GPU resources | One context, two shader programs, four shaders, five vertex arrays, and eight buffers; deletion/rebuild on hide/restore; no textures, shadow maps, render-target chains, or separate render timers |
+| 3D canvas | Auto: at most 1.2 million pixels, reduced after slow frames; Smooth: 600,000; Detailed: 1.8 million |
 | Cosmetic particles | 64 reusable slots; no target-object references |
 | Audio | One context and at most 32 connected voices; ended voices disconnect; bursts drop excess effects; hidden/muted pages stop voices and suspend audio |
-| Collectible atlas | One 640×256 sheet, about 640 KiB of raw RGBA pixels |
-| Lighting atlas | One 512×128 sheet, about 256 KiB of raw RGBA pixels |
-| Game canvas and backdrop | Each bounded by the 1.8-million-pixel render budget |
+| Fallback collectible atlas | One 640×256 sheet, about 640 KiB of raw RGBA pixels; unused by 3D rendering |
+| Fallback lighting atlas | One 512×128 sheet, about 256 KiB of raw RGBA pixels; unused by 3D rendering |
+| Effect canvas / fallback backdrop | 3D uses a transparent effect layer capped at CSS resolution and the 1.8-million-pixel maximum, with no backdrop; fallback canvas and backdrop each use the 1.8-million-pixel budget |
 
-When hidden or leaving a page, the game pauses, cancels animation callbacks, resets particles/toasts, empties both atlases and the backdrop, and reduces the display canvas to one pixel. Returning rebuilds the graphics for the current viewport and preserves the paused run and saved preferences. Visible pause screens retain the textures they still display.
+When hidden or leaving a page, the game pauses, cancels animation callbacks, deletes owned 3D GPU resources, resets particles/toasts, empties fallback atlases and the backdrop, and reduces each display canvas to one pixel. Returning rebuilds the graphics for the current viewport and preserves the paused run and saved preferences. Visible pause screens retain the resources they still display. If the GPU context is lost, the run pauses and the Canvas fallback renders it; restoring the context rebuilds the 3D resources and keeps the same paused run. Restoration while hidden delays GPU allocations until the page is visible. Unsupported WebGL2 or failed shader initialization selects the playable fallback.
 
 The app does not create Cache Storage, IndexedDB databases, or service-worker caches. Browser-managed HTTP caching helps subsequent loads and is managed by the browser; clearing it on each run would cause unnecessary downloads and would not reclaim the game's live render buffers. Asset version URLs pick up published updates. JavaScript garbage collection and the browser's native/GPU allocators remain under browser control; the game bounds its resources and releases references/buffers rather than trying to force garbage collection during play.
+
+The 3D browser checks exercised real context loss/recovery, five hide/restore cycles, quality changes, phone/desktop rotation, jump/crouch/lanes, and playable fallback. A 120-run accelerated stress test kept all 19 GPU handles and the same instance arrays bounded, with no WebGL errors or overflow. Retained JavaScript heap settled near 1.6 MiB. Scene-generation JavaScript averaged about 1.7 ms with a 5.9 ms 95th percentile in that run; these values exclude GPU/compositor work. Chromium used a software GPU, so these are correctness and resource checks, not physical-device FPS guarantees. Native/GPU memory, including driver-selected anti-aliasing buffers, is not represented by the JavaScript heap measurement.
 
 ## Security and runtime
 
@@ -134,6 +139,7 @@ Stored colors and difficulty values accept only known own properties, and invali
 | `index.html` | Interface, instructions, and accessible controls |
 | `styles.css` | Responsive layout and visual design |
 | `engine.js` | Game simulation, obstacle generation, and collision detection |
+| `renderer3d.js` | Instanced WebGL2 scene, original models, shaders, projection, quality, and resource lifecycle |
 | `input.js` | Single-contact swipe recognition and cancellation |
 | `game.js` | Canvas rendering, input, audio, and browser storage |
 | `audio.js` | Original looping music, effects, and audio lifecycle |
@@ -152,6 +158,7 @@ Stored colors and difficulty values accept only known own properties, and invali
 | `tests/storage.test.cjs` | Storage bounds, recovery, and write deduplication |
 | `tests/effects.test.cjs` | Particle limits and scratch-target independence |
 | `tests/audio.test.cjs` | Audio failure recovery, lifecycle, rapid mute/unmute, and voice bounds |
+| `tests/renderer3d.test.cjs` | Graphics fallback, initialization cleanup, resource bounds, adaptive quality, projection, and context restoration |
 | `scripts/check.mjs` | Unit tests, syntax, local assets, manifest, and security policy checks |
 | `.github/workflows/verify.yml` | Automatic release checks on pushes and pull requests |
 
@@ -167,7 +174,7 @@ node scripts/check.mjs
 
 The same command runs automatically on pushes to `main` and pull requests. SEO checks also validate the canonical origin, metadata, share-image dimensions, structured-data markers, and crawler assets. The workflow uses pinned action revisions, read-only repository permissions, and no project secrets or dependencies. It checks JavaScript syntax, same-origin asset paths under a GitHub Pages project URL, unique element IDs, manifest icon dimensions, and the restrictive Content Security Policy.
 
-The 66 unit tests include 43 simulation tests, eight gesture tests, eight audio tests, six storage tests, and one particle test. Simulation coverage includes collisions, movement, coin scoring, pause/resume, difficulty, safe obstacle generation, buffered jumps, airborne slides, depth order, shield protection, magnet collection, pickup expiry/reset, cargo crates, and the opening trail. They also cover late lane-entry collisions, slides expiring inside gates, clear counting, invalid modes/time steps, 30-minute simulated runs in every difficulty, 1,000 restarts reusing the same buffers, recycling flags, and pool saturation. Contact regressions check individual obstacle edges/heights, swept diagonal crossings, disjoint movement paths, gate posts, passed tails, train clipping-plane lifecycle, airborne pickups, chronological shield collection, no post-crash rewards, portrait core clearance, impact-position freezing, and expiry during contact. Gesture tests cover four directions, CSS-pixel thresholds, hold jitter, diagonal deferral/release, one action per contact, extra fingers, cancellation, and invalid coordinates. Storage coverage includes 10,000 changing saves without new keys, unchanged-value write deduplication, valid preference preservation, corrupt/oversized value repair, invalid input rejection, and blocked/quota-failed persistence. Particles verify their targets remain independent of recycled drawing points. Audio tests cover unavailable APIs, partial initialization cleanup, runtime device failures and explicit recovery, the 32-voice limit, ended-node disposal, pause/hide handling, unmuting before suspension settles, and unknown effect names.
+The 74 unit tests include 43 simulation tests, eight gesture tests, eight audio tests, eight renderer lifecycle tests, six storage tests, and one particle test. Simulation coverage includes collisions, movement, coin scoring, pause/resume, difficulty, safe obstacle generation, buffered jumps, airborne slides, depth order, shield protection, magnet collection, pickup expiry/reset, cargo crates, and the opening trail. They also cover late lane-entry collisions, slides expiring inside gates, clear counting, invalid modes/time steps, 30-minute simulated runs in every difficulty, 1,000 restarts reusing the same buffers, recycling flags, and pool saturation. Contact regressions check individual obstacle edges/heights, swept diagonal crossings, disjoint movement paths, gate posts, passed tails, train clipping-plane lifecycle, airborne pickups, chronological shield collection, no post-crash rewards, portrait core clearance, impact-position freezing, and expiry during contact. Gesture tests cover four directions, CSS-pixel thresholds, hold jitter, diagonal deferral/release, one action per contact, extra fingers, cancellation, and invalid coordinates. Storage coverage includes 10,000 changing saves without new keys, unchanged-value write deduplication, valid preference preservation, corrupt/oversized value repair, invalid input rejection, and blocked/quota-failed persistence. Particles verify their targets remain independent of recycled drawing points. Audio tests cover unavailable APIs, partial initialization cleanup, runtime device failures and explicit recovery, the 32-voice limit, ended-node disposal, pause/hide handling, unmuting before suspension settles, and unknown effect names.
 
 Headless Chromium checks cover real swipes before release, long holds, touch cancellation, fixed simulation ticks, music/mute/pause behavior, character jump/crouch poses, pickup timers, all three districts, collision/restart advice, and phone/desktop layouts. The source review also checked SVG centering in expanded and settings views at 320×568, 390×844, 640×320, 844×390, and 1440×900; idle animation suspension; keyboard button activation; paused color changes; page restoration; reduced motion; corrupt/blocked storage; visible goal bars; accessible dialog names; and CSP enforcement.
 
@@ -175,9 +182,9 @@ Production browser checks also exercise immediate record persistence across navi
 
 Additional browser input checks use real multi-touch events, diagonal movement and release, swipes outside viewport/canvas edges, rotation during contact, pointer-capture failure, lost mouse buttons, and a fresh swipe after rotation. They compare the drawn character transform and responsive torso core with collision coordinates at high display density.
 
-Memory checks combined 18 seconds of live rendering, an accelerated one-hour simulation, 200 immediate restarts, and eight hide/restore cycles. The production audit reran this stress test: retained JavaScript heap settled around 1.5 MiB after warmup, active objects stayed within their fixed pool, connected audio voices never exceeded 32, and hidden rendering buffers shrank to one pixel combined. The heap measurement excludes native browser/GPU memory; test instrumentation requested garbage collection only to compare retained allocations, and game code never does so.
+Before the 3D upgrade, memory checks combined 18 seconds of live rendering, an accelerated one-hour simulation, 200 immediate restarts, and eight hide/restore cycles. The production audit reran this stress test: retained JavaScript heap settled around 1.5 MiB after warmup, active objects stayed within their fixed pool, connected audio voices never exceeded 32, and hidden rendering buffers shrank to one pixel combined. The heap measurement excludes native browser/GPU memory; test instrumentation requested garbage collection only to compare retained allocations, and game code never does so.
 
-Direct Chromium profiling of the earlier cached-lighting update compared the same phone and desktop layouts before and after those rendering changes:
+Historical Canvas 2D Chromium profiling of the cached-lighting update compared the same phone and desktop layouts before and after those rendering changes:
 
 | Layout | Mean frame callback, before → after | 95th-percentile callback, before → after |
 | --- | --- | --- |
@@ -194,7 +201,7 @@ The homepage targets the game name and free browser endless-runner searches with
 
 `robots.txt` permits crawling and advertises the sitemap. The page includes `WebSite` and `VideoGame` microdata in its initial HTML. Microdata preserves the restrictive script policy and describes the actual game; there are no invented reviews, ratings, or guarantees of rich results. Controls, difficulty descriptions, and frequently asked questions are readable in the settings view after exiting the expanded game. With JavaScript disabled, a small fallback stylesheet restores normal scrolling and makes the game information accessible.
 
-Open Graph and Twitter card metadata reference a 1200×630 PNG preview made from the original mascot and actual game rendering. This image is for link previews and is not downloaded by normal gameplay. Runtime code and resource budgets are unchanged.
+Open Graph and Twitter card metadata reference a 1200×630 PNG preview made from the original mascot and actual game rendering. This image is for link previews and is not downloaded by normal gameplay. The preview is generated from the current game rendering. The 3D upgrade preserves same-origin assets, metadata, and static hosting.
 
 After publication, a verified owner can submit `https://nd.sarvesh.si/sitemap.xml` in [Google Search Console](https://search.google.com/search-console/) and Bing Webmaster Tools, then monitor indexing and search queries. Search Console verification/submission is not configured in this repository; do not invent verification tokens or include credentials in public files. Sitemaps and metadata help discovery, but search engines decide indexing, ranking, snippets, and recrawl timing.
 

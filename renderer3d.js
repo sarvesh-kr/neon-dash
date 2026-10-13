@@ -1,0 +1,1053 @@
+/* Original, bounded WebGL2 scene. No libraries, textures, downloads, or render timers. */
+(() => {
+  'use strict';
+  const STRIDE = 16;
+  const HALF = Math.SQRT1_2;
+  const SIDES = [-1, 1];
+  const COLORS = {
+    navy: 0x263955,
+    ink: 0x192941,
+    cream: 0xfff0cf,
+    white: 0xf6f6ed,
+    yellow: 0xffd34e,
+    coral: 0xff826b,
+    pink: 0xe984c0,
+    blue: 0x61bde2,
+    mint: 0x72e3b3,
+    purple: 0xa58ce3,
+    glass: 0x294766,
+    rail: 0xbac4cd,
+    ground: 0x546575,
+    pavement: 0xc4b8aa,
+    green: 0x79bb7b,
+    skin: 0xffcb56,
+  };
+  const THEMES = [
+    {
+      top: [0.24, 0.48, 0.7],
+      bottom: [1, 0.76, 0.58],
+      fog: [0.83, 0.74, 0.7],
+      colors: [COLORS.coral, COLORS.cream, COLORS.blue, COLORS.yellow],
+    },
+    {
+      top: [0.35, 0.3, 0.62],
+      bottom: [0.98, 0.67, 0.7],
+      fog: [0.75, 0.63, 0.75],
+      colors: [COLORS.purple, COLORS.pink, COLORS.cream, COLORS.mint],
+    },
+    {
+      top: [0.15, 0.53, 0.75],
+      bottom: [0.68, 0.87, 0.87],
+      fog: [0.63, 0.79, 0.81],
+      colors: [COLORS.blue, COLORS.mint, COLORS.yellow, COLORS.cream],
+    },
+  ];
+  const VERTEX = `#version 300 es
+    precision highp float;
+    layout(location=0) in vec3 aPosition;
+    layout(location=1) in vec3 aNormal;
+    layout(location=2) in vec3 iPosition;
+    layout(location=3) in vec3 iScale;
+    layout(location=4) in vec4 iRotation;
+    layout(location=5) in vec4 iColor;
+    layout(location=6) in vec2 iMaterial;
+    uniform vec4 uCamera;
+    uniform vec2 uView;
+    out vec3 vNormal;
+    out vec3 vColor;
+    out vec3 vMaterial;
+    out vec3 vWorld;
+    out float vDepth;
+    vec3 rotate(vec3 v, vec4 q) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+    void main() {
+      vec3 world = rotate(aPosition * iScale, iRotation) + iPosition;
+      vec3 delta = world - uCamera.xyz;
+      float c = cos(uCamera.w), s = sin(uCamera.w);
+      vec3 view = vec3(delta.x, c * delta.y + s * delta.z, c * delta.z - s * delta.y);
+      gl_Position = vec4(view.x * uView.x / uView.y, view.y * uView.x,
+        1.0083682 * view.z - 2.0083682, view.z);
+      vNormal = normalize(rotate(aNormal / iScale, iRotation));
+      vColor = iColor.rgb;
+      vMaterial = vec3(iMaterial, iColor.a);
+      vWorld = world;
+      vDepth = view.z;
+    }`;
+  const FRAGMENT = `#version 300 es
+    precision mediump float;
+    in vec3 vNormal;
+    in vec3 vColor;
+    in vec3 vMaterial;
+    in vec3 vWorld;
+    in float vDepth;
+    uniform vec3 uFog;
+    uniform float uTravel;
+    out vec4 outputColor;
+    void main() {
+      vec3 n = normalize(vNormal);
+      float sun = max(0.0, dot(n, normalize(vec3(-0.45, 0.85, -0.50))));
+      float toon = mix(sun, floor(sun * 4.0) / 4.0, 0.35);
+      vec3 shade = vec3(0.59, 0.63, 0.71) + toon * vec3(0.48, 0.43, 0.36);
+      shade += max(0.0, n.y) * vec3(0.06, 0.08, 0.10);
+      float shine = pow(max(0.0, dot(n, normalize(vec3(-0.35, 0.7, -0.9)))), 20.0);
+      vec3 color = vColor * mix(shade, vec3(1.08), vMaterial.y) + shine * vMaterial.x * 0.28;
+      if (vMaterial.z > 0.5) {
+        vec2 cell;
+        if (vMaterial.z < 1.5) {
+          cell = vec2(abs(n.x) > 0.6 ? vWorld.z + uTravel : vWorld.x, vWorld.y) * vec2(1.7, 3.5);
+          cell.x += step(0.5, fract(cell.y * 0.5)) * 0.5;
+        } else {
+          cell = vec2(vWorld.x * 2.0, (vWorld.z + uTravel) * 1.5);
+        }
+        float seam = smoothstep(0.465, 0.495, max(abs(fract(cell.x) - 0.5), abs(fract(cell.y) - 0.5)));
+        color *= 1.0 - seam * 0.09 * (1.0 - smoothstep(16.0, 55.0, vDepth));
+      }
+      outputColor = vec4(mix(color, uFog, smoothstep(48.0, 215.0, vDepth)), 1.0);
+    }`;
+  const SKY_VERTEX = `#version 300 es
+    void main() {
+      vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+      gl_Position = vec4(p * 2.0 - 1.0, 0.9999, 1.0);
+    }`;
+  const SKY_FRAGMENT = `#version 300 es
+    precision mediump float;
+    uniform vec2 uSize;
+    uniform vec3 uTop;
+    uniform vec3 uBottom;
+    out vec4 outputColor;
+    void main() {
+      vec2 uv = gl_FragCoord.xy / uSize;
+      vec3 sky = mix(uBottom, uTop, smoothstep(0.28, 1.0, uv.y));
+      vec2 sun = (uv - vec2(0.76, 0.78)) * vec2(uSize.x / uSize.y, 1.0);
+      float glow = max(0.0, 1.0 - length(sun) / 0.24);
+      sky += glow * glow * vec3(0.18, 0.10, 0.02);
+      sky = mix(sky, vec3(1.0, 0.91, 0.71), 1.0 - smoothstep(0.047, 0.051, length(sun)));
+      outputColor = vec4(sky, 1.0);
+    }`;
+
+  function mesh(kind) {
+    const data = [];
+    function vertex(x, y, z, nx, ny, nz) {
+      data.push(x, y, z, nx, ny, nz);
+    }
+    if (kind === 'cube') {
+      for (let axis = 0; axis < 3; axis++)
+        for (const side of SIDES) {
+          const normal = [0, 0, 0];
+          normal[axis] = side;
+          for (const corner of [0, 1, 2, 0, 2, 3]) {
+            const p = [0, 0, 0];
+            p[axis] = side * 0.5;
+            p[(axis + 1) % 3] = [-0.5, 0.5, 0.5, -0.5][corner];
+            p[(axis + 2) % 3] = [-0.5, -0.5, 0.5, 0.5][corner];
+            vertex(...p, ...normal);
+          }
+        }
+    } else if (kind === 'rounded') {
+      const grid = [-0.5, -0.42, 0, 0.42, 0.5];
+      for (let axis = 0; axis < 3; axis++)
+        for (const side of SIDES)
+          for (let row = 0; row < 4; row++)
+            for (let col = 0; col < 4; col++) {
+              for (const corner of [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 0],
+                [1, 1],
+                [0, 1],
+              ]) {
+                const position = [0, 0, 0];
+                position[axis] = side * 0.5;
+                position[(axis + 1) % 3] = grid[row + corner[0]];
+                position[(axis + 2) % 3] = grid[col + corner[1]];
+                const center = position.map((value) => Math.max(-0.42, Math.min(0.42, value)));
+                const normal = position.map((value, index) => value - center[index]);
+                const length = Math.hypot(...normal);
+                for (let index = 0; index < 3; index++) normal[index] /= length;
+                vertex(...center.map((value, index) => value + normal[index] * 0.08), ...normal);
+              }
+            }
+    } else if (kind === 'cylinder') {
+      for (let i = 0; i < 16; i++) {
+        const a = (i * Math.PI) / 8,
+          b = ((i + 1) * Math.PI) / 8;
+        const ax = Math.cos(a),
+          az = Math.sin(a),
+          bx = Math.cos(b),
+          bz = Math.sin(b);
+        for (const p of [
+          [ax, -1, az],
+          [bx, -1, bz],
+          [bx, 1, bz],
+          [ax, -1, az],
+          [bx, 1, bz],
+          [ax, 1, az],
+        ])
+          vertex(p[0] * 0.5, p[1] * 0.5, p[2] * 0.5, p[0], 0, p[2]);
+        for (const side of SIDES) {
+          vertex(0, side * 0.5, 0, 0, side, 0);
+          vertex(ax * 0.5, side * 0.5, az * 0.5, 0, side, 0);
+          vertex(bx * 0.5, side * 0.5, bz * 0.5, 0, side, 0);
+        }
+      }
+    } else {
+      for (let row = 0; row < 8; row++)
+        for (let col = 0; col < 12; col++) {
+          for (const corner of [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 0],
+            [1, 1],
+            [0, 1],
+          ]) {
+            const lat = ((row + corner[0]) * Math.PI) / 8,
+              lon = ((col + corner[1]) * Math.PI) / 6;
+            const x = Math.sin(lat) * Math.cos(lon),
+              y = Math.cos(lat),
+              z = Math.sin(lat) * Math.sin(lon);
+            vertex(x * 0.5, y * 0.5, z * 0.5, x, y, z);
+          }
+        }
+    }
+    return new Float32Array(data);
+  }
+  const MESHES = {
+    cube: mesh('cube'),
+    cylinder: mesh('cylinder'),
+    sphere: mesh('sphere'),
+    rounded: mesh('rounded'),
+  };
+  const PROFILES = Array.from({ length: 64 }, (_, i) => ({
+    height: 2.7 + ((i * 17) % 23) * 0.18,
+    width: 2.3 + ((i * 7) % 11) * 0.1,
+    color: i % 4,
+    windows: 2 + (i % 3),
+  }));
+
+  class Renderer {
+    constructor(surface, geometry) {
+      this.geometry = geometry;
+      this.canvas = document.createElement('canvas');
+      this.canvas.className = 'world-canvas';
+      this.canvas.width = this.canvas.height = 1;
+      this.canvas.setAttribute('aria-hidden', 'true');
+      this.gl = this.canvas.getContext('webgl2', {
+        alpha: false,
+        antialias: true,
+        depth: true,
+        stencil: false,
+        preserveDrawingBuffer: false,
+        powerPreference: 'high-performance',
+      });
+      if (!this.gl) throw new Error('WebGL2 unavailable');
+      this.resources = [];
+      this.batches = [
+        ['cube', 4096],
+        ['cylinder', 384],
+        ['sphere', 384],
+        ['rounded', 128],
+      ].map(([kind, capacity]) => ({
+        kind,
+        capacity,
+        data: new Float32Array(capacity * STRIDE),
+        count: 0,
+      }));
+      this.points = Array.from({ length: 16 }, () => ({ x: 0, y: 0, scale: 1 }));
+      this.pointCursor = 0;
+      this.width = this.height = 1;
+      this.eyeX = 0;
+      this.eyeY = 3;
+      this.eyeZ = -2;
+      this.pitch = 0.1;
+      this.focal = 1 / Math.tan((26 * Math.PI) / 180);
+      this.quality = 'auto';
+      this.scale = 1;
+      this.samples = 0;
+      this.elapsed = 0;
+      this.lastColor = '';
+      this.color = COLORS.mint;
+      this.lost = false;
+      this.released = false;
+      this.disabled = false;
+      this.state = { drawCalls: 0, instances: 0, triangles: 0, overflow: 0 };
+      this.pose = { lane: 1, jump: 0, crouch: 0, height: geometry.runner.height };
+      try {
+        if (document.hidden) this.released = true;
+        else this.initialize();
+      } catch (error) {
+        this.releaseGPU();
+        this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+        throw error;
+      }
+      surface.before(this.canvas);
+      this.canvas.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        this.lost = true;
+        this.releaseGPU();
+        this.released = true;
+        this.canvas.width = this.canvas.height = 1;
+        this.canvas.hidden = true;
+        this.onChange?.();
+      });
+      this.canvas.addEventListener('webglcontextrestored', () => {
+        this.lost = false;
+        this.disabled = false;
+        try {
+          if (!document.hidden) this.initialize();
+          else this.released = true;
+          this.canvas.hidden = false;
+        } catch (_) {
+          this.releaseGPU();
+          this.disabled = true;
+        }
+        this.onChange?.();
+      });
+    }
+    get active() {
+      return !this.lost && !this.disabled;
+    }
+    resource(kind, value) {
+      if (!value) throw new Error(`Unable to create ${kind}`);
+      this.resources.push({ kind, value });
+      return value;
+    }
+    program(vertex, fragment) {
+      const gl = this.gl,
+        program = this.resource('Program', gl.createProgram());
+      for (const [type, source] of [
+        [gl.VERTEX_SHADER, vertex],
+        [gl.FRAGMENT_SHADER, fragment],
+      ]) {
+        const shader = this.resource('Shader', gl.createShader(type));
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+          throw new Error('Shader compilation failed');
+        gl.attachShader(program, shader);
+      }
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+        throw new Error('Shader linking failed');
+      return program;
+    }
+    initialize() {
+      const gl = this.gl;
+      this.sceneProgram = this.program(VERTEX, FRAGMENT);
+      this.skyProgram = this.program(SKY_VERTEX, SKY_FRAGMENT);
+      this.uniforms = {
+        camera: gl.getUniformLocation(this.sceneProgram, 'uCamera'),
+        view: gl.getUniformLocation(this.sceneProgram, 'uView'),
+        fog: gl.getUniformLocation(this.sceneProgram, 'uFog'),
+        travel: gl.getUniformLocation(this.sceneProgram, 'uTravel'),
+      };
+      this.skyUniforms = {
+        size: gl.getUniformLocation(this.skyProgram, 'uSize'),
+        top: gl.getUniformLocation(this.skyProgram, 'uTop'),
+        bottom: gl.getUniformLocation(this.skyProgram, 'uBottom'),
+      };
+      this.skyVAO = this.resource('VertexArray', gl.createVertexArray());
+      for (const batch of this.batches) {
+        batch.vao = this.resource('VertexArray', gl.createVertexArray());
+        gl.bindVertexArray(batch.vao);
+        const vertices = this.resource('Buffer', gl.createBuffer());
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+        gl.bufferData(gl.ARRAY_BUFFER, MESHES[batch.kind], gl.STATIC_DRAW);
+        for (let i = 0; i < 2; i++) {
+          gl.enableVertexAttribArray(i);
+          gl.vertexAttribPointer(i, 3, gl.FLOAT, false, 24, i * 12);
+        }
+        batch.buffer = this.resource('Buffer', gl.createBuffer());
+        gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, batch.data.byteLength, gl.DYNAMIC_DRAW);
+        for (const [location, size, offset] of [
+          [2, 3, 0],
+          [3, 3, 3],
+          [4, 4, 6],
+          [5, 4, 10],
+          [6, 2, 14],
+        ]) {
+          gl.enableVertexAttribArray(location);
+          gl.vertexAttribPointer(location, size, gl.FLOAT, false, STRIDE * 4, offset * 4);
+          gl.vertexAttribDivisor(location, 1);
+        }
+      }
+      gl.bindVertexArray(null);
+      gl.disable(gl.CULL_FACE);
+      gl.disable(gl.BLEND);
+      this.released = false;
+    }
+    releaseGPU() {
+      if (!this.lost)
+        for (const resource of this.resources) this.gl[`delete${resource.kind}`](resource.value);
+      this.resources.length = 0;
+      this.sceneProgram = this.skyProgram = this.skyVAO = this.uniforms = this.skyUniforms = null;
+      for (const batch of this.batches) batch.vao = batch.buffer = null;
+    }
+    release() {
+      if (!this.lost) this.releaseGPU();
+      this.released = true;
+      this.canvas.width = this.canvas.height = 1;
+      this.samples = this.elapsed = 0;
+    }
+    resize(width, height) {
+      this.width = width;
+      this.height = height;
+      if (!this.active) return false;
+      if (this.released) {
+        try {
+          this.initialize();
+        } catch (_) {
+          this.releaseGPU();
+          this.disabled = true;
+          this.canvas.hidden = true;
+          return false;
+        }
+      }
+      const budget =
+        this.quality === 'smooth'
+          ? 600000
+          : this.quality === 'detailed'
+            ? 1800000
+            : 1200000 * this.scale;
+      const dpr = Math.min(
+        this.quality === 'smooth' ? 1 : 2,
+        window.devicePixelRatio || 1,
+        Math.sqrt(budget / (width * height)),
+      );
+      const w = Math.max(1, Math.floor(width * dpr)),
+        h = Math.max(1, Math.floor(height * dpr));
+      if (this.canvas.width === w && this.canvas.height === h) return false;
+      this.canvas.width = w;
+      this.canvas.height = h;
+      this.gl.viewport(0, 0, w, h);
+      return true;
+    }
+    setQuality(value) {
+      if (!['auto', 'smooth', 'detailed'].includes(value)) return;
+      this.quality = value;
+      this.scale = 1;
+      this.samples = this.elapsed = 0;
+      this.resize(this.width, this.height);
+      this.onChange?.();
+    }
+    observeFrame(dt, running) {
+      if (
+        this.quality !== 'auto' ||
+        !running ||
+        !Number.isFinite(dt) ||
+        dt <= 0 ||
+        dt > 0.25 ||
+        this.scale <= 0.55
+      )
+        return;
+      this.elapsed += dt;
+      this.samples++;
+      if (this.samples >= 180 || (this.elapsed >= 2.5 && this.samples >= 20)) {
+        if (this.elapsed / this.samples > 0.024) {
+          this.scale = Math.max(0.55, this.scale * 0.75);
+          this.resize(this.width, this.height);
+        }
+        this.samples = this.elapsed = 0;
+      }
+    }
+    add(
+      kind,
+      x,
+      y,
+      z,
+      sx,
+      sy,
+      sz,
+      color,
+      qx = 0,
+      qy = 0,
+      qz = 0,
+      qw = 1,
+      gloss = 0.15,
+      emissive = 0,
+      material = 0,
+    ) {
+      const batch = this.batches[kind];
+      if (batch.count >= batch.capacity) {
+        this.state.overflow++;
+        return;
+      }
+      const data = batch.data;
+      let index = batch.count++ * STRIDE;
+      data[index++] = x;
+      data[index++] = y;
+      data[index++] = z;
+      data[index++] = sx;
+      data[index++] = sy;
+      data[index++] = sz;
+      data[index++] = qx;
+      data[index++] = qy;
+      data[index++] = qz;
+      data[index++] = qw;
+      data[index++] = ((color >> 16) & 255) / 255;
+      data[index++] = ((color >> 8) & 255) / 255;
+      data[index++] = (color & 255) / 255;
+      data[index++] = material;
+      data[index++] = gloss;
+      data[index] = emissive;
+    }
+    box(x, y, z, sx, sy, sz, color, emissive = 0, material = 0) {
+      this.add(0, x, y, z, sx, sy, sz, color, 0, 0, 0, 1, 0.1, emissive, material);
+    }
+    world(distance, theme) {
+      this.box(0, -0.17, 110, 3.5, 0.3, 245, COLORS.ground);
+      for (const side of SIDES) {
+        this.box(side * 2.4, -0.04, 110, 1.3, 0.12, 245, COLORS.pavement, 0, 2);
+        this.box(side * 1.76, 0.065, 110, 0.13, 0.15, 245, COLORS.cream);
+        this.box(side * 3.12, 0.2, 110, 0.1, 0.45, 245, COLORS.coral);
+      }
+      for (let lane = -1; lane <= 1; lane++) {
+        this.box(lane, -0.009, 110, 0.86, 0.016, 245, 0x435666);
+        for (const side of SIDES)
+          this.box(lane + side * 0.32, 0.008, 110, 0.035, 0.024, 245, COLORS.rail);
+        for (let i = 0; i < 76; i++)
+          this.box(lane, 0, i * 2.7 - ((distance % 2.7) + 3), 0.75, 0.02, 0.19, 0x303e4d);
+      }
+      const tile = Math.floor(distance / 12),
+        shift = distance % 12;
+      for (let i = 0; i < 19; i++)
+        for (const side of SIDES) {
+          const profile = PROFILES[((tile + i) * 2 + (side > 0 ? 1 : 0)) % PROFILES.length];
+          const z = i * 12 + 6 - shift,
+            x = side * (4.6 + profile.width * 0.12),
+            h = profile.height;
+          const color = theme.colors[profile.color];
+          this.box(x, h / 2, z, profile.width, h, 8.3, color, 0, 1);
+          this.box(x, h + 0.11, z, profile.width + 0.18, 0.22, 8.5, COLORS.cream);
+          this.box(x, h * 0.46, z - 4.2, profile.width + 0.12, 0.14, 0.2, COLORS.cream);
+          this.box(x, h * 0.46, z + 4.2, profile.width + 0.12, 0.14, 0.2, COLORS.cream);
+          const face = x - side * (profile.width / 2 + 0.015);
+          if (z < 115) {
+            for (let row = 0; row < profile.windows; row++)
+              for (let col = 0; col < 3; col++) {
+                const wy = 1.25 + (row * (h - 1.3)) / profile.windows,
+                  wz = z - 2.5 + col * 2.5;
+                this.box(face, wy, wz, 0.03, 0.62, 0.77, COLORS.cream);
+                this.box(face - side * 0.021, wy, wz, 0.025, 0.49, 0.63, COLORS.glass);
+                this.box(face - side * 0.04, wy, wz, 0.018, 0.025, 0.65, COLORS.blue, 0.2);
+              }
+            this.box(face - side * 0.08, 0.46, z, 0.14, 0.9, 1.0, COLORS.navy);
+            this.box(
+              face - side * 0.36,
+              1.05,
+              z,
+              0.77,
+              0.12,
+              1.9,
+              theme.colors[(profile.color + 1) % 4],
+            );
+            for (let stripe = 0; stripe < 4; stripe++)
+              this.box(
+                face - side * 0.38,
+                1.12,
+                z - 0.75 + stripe * 0.5,
+                0.8,
+                0.06,
+                0.21,
+                COLORS.white,
+              );
+            if ((tile + i) % 3 === 0) {
+              this.box(side * 2.55, 0.46, z + 3.2, 0.65, 0.68, 0.75, COLORS.coral);
+              this.add(1, side * 2.55, 1.2, z + 3.2, 0.12, 1.1, 0.12, 0x8d6650);
+              this.add(2, side * 2.55, 2.0, z + 3.2, 1.1, 1.45, 0.95, COLORS.green);
+              this.add(2, side * 2.75, 1.85, z + 3.4, 0.85, 1.0, 0.85, 0x9bce84);
+            } else {
+              this.box(side * 2.5, 1.35, z + 3.6, 0.055, 2.7, 0.055, COLORS.navy);
+              this.box(side * 2.38, 2.75, z + 3.6, 0.4, 0.09, 0.14, COLORS.navy);
+              this.box(side * 2.37, 2.69, z + 3.6, 0.3, 0.045, 0.11, COLORS.yellow, 0.7);
+            }
+          }
+          if (i % 2 === 0) {
+            this.box(side * 9, h + 1, z, 3.9, h * 2 + 2, 9, theme.colors[(profile.color + 2) % 4]);
+            this.box(side * 9, h * 2 + 2.15, z, 4.05, 0.3, 9.2, COLORS.cream);
+          }
+        }
+      for (let i = 0; i < 3; i++) {
+        const z = i * 72 + 48 - (distance % 72);
+        for (const side of SIDES) this.box(side * 2.9, 2.5, z, 0.25, 5, 0.28, COLORS.navy);
+        this.box(0, 5.1, z, 6.3, 0.38, 0.42, COLORS.navy);
+        this.box(0, 4.9, z - 0.23, 4.5, 0.1, 0.03, COLORS.yellow, 0.6);
+      }
+    }
+    obstacle(object, time, theme) {
+      const shape = this.geometry[object.type],
+        x = object.lane - 1,
+        z = object.z;
+      if (!shape || object.collected || object.destroyed || z > 220 || z + (shape.length || 0) < -3)
+        return;
+      const w = shape.halfWidth * 2;
+      if (object.type === 'train') {
+        const color = theme.colors[(object.lane + 1) % 4];
+        const hullHeight = shape.height - 0.17;
+        this.box(x, hullHeight / 2, z + shape.length / 2, w, hullHeight, shape.length, color);
+        this.add(
+          1,
+          x,
+          hullHeight,
+          z + shape.length / 2,
+          w,
+          shape.length,
+          0.33,
+          COLORS.cream,
+          HALF,
+          0,
+          0,
+          HALF,
+        );
+        this.box(x, 0.35, z + shape.length / 2, w * 1.01, 0.35, shape.length, COLORS.navy);
+        this.box(x, 1.66, z + 0.006, w * 0.72, 0.61, 0.018, COLORS.glass);
+        this.box(x, 1.98, z + 0.008, w * 0.5, 0.08, 0.02, COLORS.cream);
+        this.box(x, 0.62, z + 0.012, w * 0.68, 0.075, 0.024, COLORS.cream);
+        for (const side of SIDES) {
+          this.box(x + side * w * 0.34, 0.77, z + 0.014, 0.11, 0.12, 0.028, COLORS.yellow, 0.7);
+          for (let i = 0; i < 5; i++) {
+            this.box(
+              x + side * (w / 2 + 0.001),
+              1.53,
+              z + 1.8 + i * 3.1,
+              0.014,
+              0.68,
+              1.7,
+              COLORS.cream,
+            );
+            this.box(
+              x + side * (w / 2 + 0.012),
+              1.53,
+              z + 1.8 + i * 3.1,
+              0.014,
+              0.51,
+              1.52,
+              COLORS.glass,
+            );
+          }
+        }
+        for (let i = 0; i < 4; i++)
+          this.box(x, 0.15, z + 2 + i * 4, w * 0.78, 0.27, 0.35, COLORS.ink);
+      } else if (object.type === 'gate') {
+        const g = this.geometry.gate;
+        for (const side of SIDES) {
+          this.box(
+            x + side * g.postOffset,
+            g.height / 2,
+            z + g.length / 2,
+            g.postHalfWidth * 2,
+            g.height,
+            g.length,
+            COLORS.pink,
+          );
+          for (let i = 0; i < 5; i++)
+            this.box(
+              x + side * g.postOffset,
+              0.25 + i * 0.36,
+              z + 0.008,
+              g.postHalfWidth * 2,
+              0.09,
+              0.016,
+              COLORS.cream,
+            );
+        }
+        this.box(
+          x,
+          (g.clearance + g.beamTop) / 2,
+          z + g.length / 2,
+          g.beamHalfWidth * 2,
+          g.beamTop - g.clearance,
+          g.length,
+          COLORS.pink,
+        );
+        this.box(x, g.clearance + 0.06, z + 0.006, w, 0.1, 0.018, COLORS.yellow, 0.5);
+        for (let i = 0; i < 5; i++)
+          this.box(x - 0.45 + i * 0.22, 1.7, z + 0.01, 0.1, 0.4, 0.02, COLORS.cream);
+      } else if (object.type === 'barrier') {
+        this.box(
+          x,
+          shape.height / 2,
+          z + shape.length / 2,
+          w,
+          shape.height,
+          shape.length,
+          COLORS.coral,
+        );
+        for (let i = 0; i < 5; i++)
+          this.add(
+            0,
+            x - 0.35 + i * 0.18,
+            shape.height * 0.52,
+            z + 0.011,
+            0.1,
+            shape.height * 0.9,
+            0.023,
+            COLORS.cream,
+            0,
+            0,
+            -0.15,
+            Math.sqrt(1 - 0.15 ** 2),
+          );
+        this.box(x, shape.height - 0.04, z + shape.length / 2, w, 0.08, shape.length, COLORS.cream);
+      } else if (object.type === 'crate') {
+        this.box(
+          x,
+          shape.height / 2,
+          z + shape.length / 2,
+          w,
+          shape.height,
+          shape.length,
+          0xd7a164,
+        );
+        for (const side of SIDES) {
+          this.box(
+            x + side * w * 0.38,
+            shape.height / 2,
+            z + 0.013,
+            0.075,
+            shape.height,
+            0.028,
+            0xffd29a,
+          );
+          this.box(
+            x + side * w * 0.38,
+            shape.height + 0.002,
+            z + shape.length / 2,
+            0.075,
+            0.018,
+            shape.length,
+            0xffd29a,
+          );
+        }
+        this.box(x, shape.height * 0.25, z + 0.014, w, 0.07, 0.03, 0x8e6347);
+        this.box(x, shape.height * 0.75, z + 0.014, w, 0.07, 0.03, 0x8e6347);
+      } else {
+        const y = (shape.bottom + shape.top) / 2;
+        const angle = time * 2.8 + z * 0.03,
+          spin = Math.sin(angle / 2),
+          turn = Math.cos(angle / 2);
+        if (object.type === 'coin') {
+          // A thin disc spins around its vertical axis; bounds remain within the pickup core.
+          const qx = HALF * turn,
+            qy = HALF * spin,
+            qz = -HALF * spin,
+            qw = HALF * turn;
+          this.add(1, x, y, z, 0.29, 0.065, 0.29, COLORS.yellow, qx, qy, qz, qw, 0.9, 0.1);
+          this.add(2, x, y, z, 0.19, 0.19, 0.07, 0xffeb9c, 0, spin, 0, turn, 0.6, 0.05);
+        } else if (object.type === 'shield') {
+          this.add(2, x, y, z, 0.4, 0.58, 0.25, COLORS.mint, 0, spin, 0, turn, 0.7, 0.1);
+          this.add(0, x, y, z - 0.14, 0.055, 0.3, 0.03, COLORS.white, 0, 0, 0, 1, 0.2, 0.5);
+          this.box(x, y + 0.04, z - 0.15, 0.22, 0.05, 0.025, COLORS.white, 0.5);
+        } else if (object.type === 'magnet') {
+          this.box(x - 0.13, y + 0.09, z, 0.11, 0.34, 0.17, COLORS.blue);
+          this.box(x + 0.13, y + 0.09, z, 0.11, 0.34, 0.17, COLORS.blue);
+          this.box(x, y - 0.09, z, 0.31, 0.11, 0.17, COLORS.blue);
+          this.box(x - 0.13, y + 0.23, z, 0.11, 0.09, 0.17, COLORS.cream, 0.5);
+          this.box(x + 0.13, y + 0.23, z, 0.11, 0.09, 0.17, COLORS.cream, 0.5);
+        }
+      }
+    }
+    limb(x1, y1, z1, x2, y2, z2, width, color) {
+      const dx = x2 - x1,
+        dy = y2 - y1,
+        dz = z2 - z1,
+        length = Math.hypot(dx, dy, dz);
+      if (length < 0.0001) return;
+      const ny = dy / length;
+      let qx = dz / length,
+        qz = -dx / length,
+        qw = 1 + ny;
+      if (qw < 0.0001) {
+        qx = 1;
+        qz = 0;
+        qw = 0;
+      }
+      const inverse = 1 / Math.hypot(qx, qz, qw);
+      this.add(
+        3,
+        (x1 + x2) / 2,
+        (y1 + y2) / 2,
+        (z1 + z2) / 2,
+        width,
+        length,
+        width,
+        color,
+        qx * inverse,
+        0,
+        qz * inverse,
+        qw * inverse,
+        0.5,
+      );
+    }
+    avatar(lane, jump, crouch, landing, lean, cycle, active, shield, magnet) {
+      const x = lane - 1,
+        z = this.geometry.runner.z;
+      const stride = active && !jump ? Math.sin(cycle) : 0,
+        tuck = Math.min(1, jump / 1.2);
+      const bob = active && !jump ? Math.abs(Math.cos(cycle)) * 0.018 : 0;
+      const y = jump + bob - landing * 0.045;
+      const angle = -Math.max(-0.2, Math.min(0.2, lean));
+      const bodyX = x + Math.sin(-angle) * 0.3;
+      const hip = 0.67 - crouch * 0.25,
+        head = 1.42 - crouch * 0.56;
+      this.pose.lane = lane;
+      this.pose.jump = jump;
+      this.pose.crouch = crouch;
+      this.pose.height =
+        this.geometry.runner.height -
+        crouch * (this.geometry.runner.height - this.geometry.runner.crouchHeight);
+      this.add(2, x, 0.014, z, 0.65 * (1 - jump * 0.12), 0.018, 0.6, 0x354957, 0, 0, 0, 1, 0);
+      for (const side of SIDES) {
+        const swing = stride * side,
+          hx = x + side * 0.1;
+        const kneeY = y + 0.36 - crouch * 0.08 + tuck * 0.1;
+        const kneeZ = z + swing * 0.18 + crouch * 0.26;
+        const footY = y + 0.095 + Math.max(0, -swing) * 0.1 + tuck * 0.14;
+        const footZ = z - swing * 0.22 + crouch * 0.36 - tuck * 0.12;
+        this.limb(hx, y + hip, z, hx, kneeY, kneeZ, 0.14, COLORS.navy);
+        this.limb(hx, kneeY, kneeZ, hx, footY + 0.05, footZ, 0.13, COLORS.navy);
+        this.add(3, hx, footY, footZ + 0.035, 0.2, 0.11, 0.32, COLORS.white, 0, 0, 0, 1, 0.5);
+        this.box(hx, footY - 0.048, footZ + 0.035, 0.2, 0.025, 0.32, this.color);
+        const shoulderY = y + 1.1 - crouch * 0.45,
+          handY = y + 0.77 - crouch * 0.24 + tuck * 0.12;
+        const elbowZ = z - swing * 0.18 + crouch * 0.19;
+        const handZ = z - swing * 0.27 + crouch * 0.33;
+        this.limb(
+          bodyX + side * 0.22,
+          shoulderY,
+          z,
+          bodyX + side * 0.29,
+          handY + 0.15,
+          elbowZ,
+          0.14,
+          this.color,
+        );
+        this.limb(
+          bodyX + side * 0.29,
+          handY + 0.15,
+          elbowZ,
+          bodyX + side * 0.26,
+          handY,
+          handZ,
+          0.13,
+          this.color,
+        );
+        this.add(
+          2,
+          bodyX + side * 0.26,
+          handY,
+          handZ,
+          0.14,
+          0.16,
+          0.14,
+          COLORS.skin,
+          0,
+          0,
+          0,
+          1,
+          0.65,
+        );
+      }
+      const qz = Math.sin(angle / 2),
+        qw = Math.cos(angle / 2);
+      this.add(
+        3,
+        bodyX,
+        y + 1.015 - crouch * 0.39,
+        z,
+        0.43,
+        0.43,
+        0.3,
+        this.color,
+        0,
+        0,
+        qz,
+        qw,
+        0.8,
+      );
+      this.add(3, x, y + hip, z, 0.33, 0.19, 0.28, COLORS.navy, 0, 0, qz, qw, 0.4);
+      this.add(
+        3,
+        bodyX,
+        y + 1.02 - crouch * 0.39,
+        z - 0.2,
+        0.25,
+        0.33,
+        0.15,
+        COLORS.ink,
+        0,
+        0,
+        qz,
+        qw,
+        0.4,
+      );
+      this.box(bodyX, y + 0.96 - crouch * 0.39, z - 0.28, 0.19, 0.1, 0.025, COLORS.blue);
+      this.box(bodyX, y + 1.11 - crouch * 0.39, z - 0.28, 0.075, 0.034, 0.03, this.color);
+      this.add(1, bodyX, y + 1.28 - crouch * 0.52, z, 0.12, 0.12, 0.12, COLORS.skin);
+      this.add(1, bodyX, y + head, z, 0.43, 0.3, 0.43, COLORS.skin, 0, 0, qz, qw, 0.65);
+      this.add(
+        2,
+        bodyX,
+        y + 1.575 - crouch * 0.57,
+        z,
+        0.45,
+        0.14,
+        0.45,
+        COLORS.navy,
+        0,
+        0,
+        qz,
+        qw,
+        0.8,
+      );
+      this.box(bodyX, y + 1.55 - crouch * 0.57, z + 0.14, 0.46, 0.055, 0.38, COLORS.navy);
+      this.box(bodyX, y + 1.59 - crouch * 0.57, z - 0.2, 0.16, 0.045, 0.03, this.color);
+      for (const side of SIDES) {
+        this.add(
+          1,
+          bodyX + side * 0.22,
+          y + head,
+          z,
+          0.16,
+          0.055,
+          0.16,
+          COLORS.ink,
+          0,
+          0,
+          HALF,
+          HALF,
+          0.65,
+        );
+        this.add(
+          1,
+          bodyX + side * 0.254,
+          y + head,
+          z,
+          0.12,
+          0.025,
+          0.12,
+          this.color,
+          0,
+          0,
+          HALF,
+          HALF,
+          0.8,
+        );
+      }
+      this.box(bodyX, y + 1.56 - crouch * 0.57, z, 0.45, 0.025, 0.06, COLORS.cream);
+      if (shield)
+        for (let i = 0; i < 16; i++) {
+          const a = (i * Math.PI) / 8;
+          this.add(
+            2,
+            x + Math.cos(a) * 0.47,
+            y + 0.8 + Math.sin(a) * 0.83,
+            z - 0.1,
+            0.045,
+            0.065,
+            0.04,
+            COLORS.mint,
+            0,
+            0,
+            0,
+            1,
+            0.2,
+            0.7,
+          );
+        }
+      if (magnet)
+        for (const side of SIDES) {
+          this.box(x + side * 0.44, y + 0.8, z, 0.045, 0.25, 0.06, COLORS.blue, 0.6);
+          this.box(x + side * 0.38, y + 0.96, z, 0.14, 0.045, 0.06, COLORS.blue, 0.6);
+        }
+    }
+    render(game, objects, lane, jump, time, color, district, impact, reducedMotion) {
+      if (!this.active || this.released) return false;
+      const theme = THEMES[district % 3];
+      if (color !== this.lastColor) {
+        this.lastColor = color;
+        this.color = parseInt(color.slice(1), 16);
+      }
+      this.eyeX = !reducedMotion && impact > 0 ? Math.sin(time * 95) * impact * 0.05 : 0;
+      this.pointCursor = 0;
+      this.state.drawCalls = this.state.instances = this.state.triangles = this.state.overflow = 0;
+      for (const batch of this.batches) batch.count = 0;
+      const distance = game.state === 'ready' ? time * 3 : game.distance;
+      this.world(distance, theme);
+      for (const object of objects) this.obstacle(object, time, theme);
+      this.avatar(
+        lane,
+        jump,
+        game.slidePose,
+        game.landing / 0.16,
+        game.laneVelocity * 0.018,
+        game.state === 'running' ? game.distance * 0.48 : time * 2,
+        game.state === 'running',
+        game.shieldTime > 0,
+        game.magnetTime > 0,
+      );
+      const gl = this.gl;
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      gl.useProgram(this.skyProgram);
+      gl.bindVertexArray(this.skyVAO);
+      gl.uniform2f(this.skyUniforms.size, this.canvas.width, this.canvas.height);
+      gl.uniform3fv(this.skyUniforms.top, theme.top);
+      gl.uniform3fv(this.skyUniforms.bottom, theme.bottom);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.depthMask(true);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      gl.useProgram(this.sceneProgram);
+      gl.uniform4f(this.uniforms.camera, this.eyeX, this.eyeY, this.eyeZ, this.pitch);
+      gl.uniform2f(this.uniforms.view, this.focal, this.width / this.height);
+      gl.uniform3fv(this.uniforms.fog, theme.fog);
+      gl.uniform1f(this.uniforms.travel, distance % 120);
+      for (const batch of this.batches) {
+        gl.bindVertexArray(batch.vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, batch.data, 0, batch.count * STRIDE);
+        const vertices = MESHES[batch.kind].length / 6;
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, vertices, batch.count);
+        this.state.instances += batch.count;
+        this.state.triangles += (vertices / 3) * batch.count;
+      }
+      gl.bindVertexArray(null);
+      this.state.drawCalls = 1 + this.batches.length;
+      return true;
+    }
+    project(x, z, elevation = 0) {
+      const point = this.points[this.pointCursor++ % this.points.length];
+      const dy = elevation - this.eyeY,
+        dz = z - this.eyeZ,
+        c = Math.cos(this.pitch),
+        s = Math.sin(this.pitch);
+      const depth = c * dz - s * dy;
+      point.x = this.width / 2 + ((x - this.eyeX) * this.focal * this.height) / (2 * depth);
+      point.y = this.height / 2 - ((c * dy + s * dz) * this.focal * this.height) / (2 * depth);
+      point.scale = 1 / depth;
+      return point;
+    }
+    get stats() {
+      return {
+        ...this.state,
+        resources: this.resources.length,
+        pixels: this.canvas.width * this.canvas.height,
+        instanceBytes: this.batches.reduce((sum, batch) => sum + batch.data.byteLength, 0),
+        quality: this.quality,
+        resolutionScale: this.scale,
+      };
+    }
+  }
+  window.Neon3D = {
+    create(surface, geometry) {
+      try {
+        return new Renderer(surface, geometry);
+      } catch (_) {
+        return null;
+      }
+    },
+  };
+})();
